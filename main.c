@@ -33,6 +33,9 @@ int main(int argc, char* argv[])
     int nb_neighbors;
     Neighbor* neighbors = malloc(nb_neighbors * sizeof(Neighbor));
 
+    /* ********************* Parsing of paramters ************************ */
+    // TO DO
+
     // Client sockets information
     int* s_client = malloc(nb_neighbors * sizeof(int));
     struct hostent* h;
