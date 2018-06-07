@@ -9,6 +9,11 @@
 #include<netdb.h>
 #include<pthread.h>
 
+typedef struct Neighbor {
+    int id;
+    int port;
+    char hostname[100];
+} Neighbor;
 
 void* handle_neighbor(void* arg);
 
@@ -25,17 +30,49 @@ int main(int argc, char* argv[])
     int node_id;
     int port;
 
-    int* neighbors;
     int nb_neighbors;
+    Neighbor* neighbors = malloc(nb_neighbors * sizeof(Neighbor));
 
-    // Socket information
+    // Client sockets information
+    int* s_client = malloc(nb_neighbors * sizeof(int));
+    struct hostent* h;
+
+    // Server Socket information
     int s, s_current;
-    int* s_client;
+    int* s_neighbor;
     struct sockaddr_in sin;
     struct sockaddr_in pin;
     int addrlen;
     pthread_t tid;
     pthread_attr_t attr;
+
+    // Create client sockets to neighbors of the node
+    int j = 0;
+    for (j = 0; j < nb_neighbors; j++) {
+        // Create TCP socket
+        if ((s_client[j] = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+            printf("Error creating socket\n");
+            exit(1); 
+        }
+
+        // Get host info
+        if ((h = gethostbyname(neighbors[j].hostname)) == 0) {
+            printf("Error on gethostbyname\n");
+            exit(1);
+        }
+
+        // Fill in socket address structure with host info
+        memset(&pin, 0, sizeof(pin));
+        pin.sin_family = AF_INET;
+        pin.sin_addr.s_addr = ((struct in_addr *)(h->h_addr))->s_addr;
+        pin.sin_port = htons(neighbors[j].port);
+
+        // Connect to port on neighbor
+        if (connect(s_client[j], (struct sockaddr *) &pin, sizeof(pin)) == -1) {
+            printf("Error when connecting to neighbor\n");
+            exit(1);
+        }
+    }
 
     // Create TCP server socket
     if ((s = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
@@ -61,7 +98,7 @@ int main(int argc, char* argv[])
         exit(1);
     }
 
-    // Wait for all neighbors to connect to the server socket
+    // Create thread for receiving each neighbor messages
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     addrlen = sizeof(pin);
@@ -73,16 +110,17 @@ int main(int argc, char* argv[])
             exit(1);
         }
         
-        s_client = (int*) (malloc(sizeof(s_current)));
-        *s_client = s_current;
+        s_neighbor = (int*) (malloc(sizeof(s_current)));
+        *s_neighbor = s_current;
 
-        pthread_create(&tid, &attr, handle_neighbor, s_client);
+        pthread_create(&tid, &attr, handle_neighbor, s_neighbor);
         i++;
     }
 
     exit(0);
 }
 
+// Reads incoming messages from neighbors and places them in a global queue
 void* handle_neighbor(void* arg) 
 {
 }
