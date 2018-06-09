@@ -1,2 +1,2 @@
 make: main.c
-	gcc -pthread main.c -o node
+	gcc -pthread *.c -o node
