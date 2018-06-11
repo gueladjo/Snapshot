@@ -161,16 +161,17 @@ int* read_config_file(config * system)
     int tokensRead = 0;
     int tokensInLine = 6; // First valid line has 6 tokens
     int linesRead = 0;
-
     if (fp)
     {
         int system_info[6];
+        
         while (tokensRead < tokensInLine) // First Line
         {
             int input;
             char charInput;
-            fscanf(fp, "%d", &input);
-            if (input > 0)
+            int matched = 0;
+            matched = fscanf(fp, "%d", &input);
+            if (matched)
             {
                 system_info[tokensRead] = input;
                 tokensRead++;                
@@ -178,8 +179,23 @@ int* read_config_file(config * system)
             else 
             {
                 fscanf(fp, "%c", &charInput);
+                if (charInput == '#')
+                {
+                    if (tokensRead > 0)
+                    {
+                        while (charInput != '\n')
+                            fscanf(fp, "%c", &charInput);
+                        break;
+                    }
+                    else
+                    {
+                        while (charInput != '\n')
+                            fscanf(fp, "%c", &charInput);                            
+                    }
+                }
             }
-        } 
+        }
+        
         // First line done
 
         system->nodes_in_system = system_info[0];
@@ -194,7 +210,7 @@ int* read_config_file(config * system)
         int i;
         for (i = 0; i < system->nodes_in_system; i++)
         {
-            system->hostNames[i] = (char*)malloc(5 * sizeof(char));// 5 = length of string (dc##) + 1
+           system->hostNames[i] = (char*)malloc(5 * sizeof(char));// 5 = length of string (dc##) + 1
         }
         system->portNumbers = (int*)malloc(system->nodes_in_system * sizeof(int));
         system->neighborCount = (int*)malloc(system->nodes_in_system * sizeof(int)); 
@@ -206,20 +222,33 @@ int* read_config_file(config * system)
 
         // Begin second part TODO: stop at comments (#)
         while (linesRead < system->nodes_in_system) // nodes_in_system = nodes in system
-        {
+        {            
             tokensRead = 0;
             while (tokensRead < tokensInLine)
             {
                 int input;
                 char stringInput[5];
-                char charInput;                   
+                char charInput;
+                int matched = 0;                   
                 
-                fscanf(fp, "%d", &input);
 
-                if (input >= 0)
+                while (!matched)
                 {
-                    system->nodeIDs[linesRead] = input;
-                    tokensRead++;                    
+                    matched = fscanf(fp, "%d", &input);            
+                    if (input >= 0 && matched)
+                    {
+                        system->nodeIDs[linesRead] = input;
+                        tokensRead++;   
+                    }
+                    else 
+                    {
+                        fscanf(fp, "%c", &charInput);
+                        while (charInput != '\n')
+                        {                
+                                        
+                            fscanf(fp, "%c", &charInput);                        
+                        }
+                    }
                 }
 
                 fscanf(fp, "%s", stringInput);
@@ -227,17 +256,22 @@ int* read_config_file(config * system)
                 strcpy(system->hostNames[linesRead], stringInput); // Not sure why I'm getting a warning here?
                 tokensRead++;                                   
 
-                fscanf(fp, "%d", &input);
+                matched = fscanf(fp, "%d", &input);
 
-                if (input >= 0)
+                if (matched)
                 {
-                    
                     system->portNumbers[linesRead] = input;
                     tokensRead++;
                 }
-
-                fscanf(fp, "%c", &charInput);    
-                            
+                else 
+                {
+                    fscanf(fp, "%c", &charInput);
+                    while (charInput != '\n')
+                    {
+                        
+                        fscanf(fp, "%c", &charInput);                        
+                    }
+                }      
                 linesRead++;
             }
         } // Done with second part
@@ -247,35 +281,67 @@ int* read_config_file(config * system)
         int tempIndex = 0;
 
         // Third Part
+        // Question: Are we guaranteed a space delimited list?
         int * tempArray = (int*)malloc((system->nodes_in_system - 1)* sizeof(int)); //max possible neighbors 
         
         while (linesRead < system->nodes_in_system && !feof(fp))
         {
             char charInput = '\0';
             int input;
-            int valuesRead;
-            int neighborIndex;
+            int matched;
+            int neighborIndex;            
             
-            
-            valuesRead = fscanf(fp, "%d%c", &input, &charInput);
+            matched = fscanf(fp, "%d", &input);
 
-            if (valuesRead)
-            {
+            if (matched)
+            {               
                 tempArray[tempIndex] = input;
                 tempIndex++;
-
-                if (charInput == 13 || feof(fp))
+            }
+            else
+            {
+                while(charInput != '\n' && !feof(fp))
                 {
-                    system->neighbors[linesRead] = (int*)malloc((tempIndex+1) * sizeof(int));
+                    charInput = fgetc(fp);
+                }
+
+
+                system->neighbors[linesRead] = (int*)malloc((tempIndex+1) * sizeof(int));
+                if (tempIndex >0)
+                {
                     for (neighborIndex = 0; neighborIndex < tempIndex; neighborIndex++) // tempIndex = neighborCount for node at lineRead (first line = fisrt node)
                     {
                         system->neighbors[linesRead][neighborIndex] = tempArray[neighborIndex];
                     }
-               
-                    
-                    system->neighborCount[linesRead] = tempIndex;
-                    linesRead++;
-                    tempIndex = 0;
+                }
+                system->neighborCount[linesRead] = tempIndex;
+                tempIndex = 0;
+                linesRead++;
+            }
+            
+            if (matched)
+            {
+                charInput = fgetc(fp);
+                if (charInput == '#')
+                {
+                    while(charInput != '\n' && !feof(fp))
+                    {
+                        charInput = fgetc(fp);
+                    }
+
+
+                    system->neighbors[linesRead] = (int*)malloc((tempIndex+1) * sizeof(int));
+                    if (tempIndex >0)
+                    {
+                        for (neighborIndex = 0; neighborIndex < tempIndex; neighborIndex++) // tempIndex = neighborCount for node at lineRead (first line = fisrt node)
+                        {
+                            system->neighbors[linesRead][neighborIndex] = tempArray[neighborIndex];
+                        }
+     
+                        system->neighborCount[linesRead] = tempIndex;
+                        tempIndex = 0;
+                        linesRead++;         
+                    }     
                 }
             }
         }
