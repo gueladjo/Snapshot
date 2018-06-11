@@ -11,13 +11,24 @@
 
 #include "config.h"
 
+#define BUFFERSIZE 512
+
 typedef struct Neighbor {
     int id;
     int port;
     char hostname[100];
 } Neighbor;
 
+typedef struct Queue {
+    char q[1024];
+    size_t len;
+} Queue;
+
 void* handle_neighbor(void* arg);
+void parse_buffer(char* buffer, size_t* rcv_len);
+int enqueue(Queue* q, char* message, size_t length);
+
+Queue* global_q;
 
 int main(int argc, char* argv[])
 {
@@ -135,5 +146,51 @@ int main(int argc, char* argv[])
 // Reads incoming messages from neighbors and places them in a global queue
 void* handle_neighbor(void* arg) 
 {
+    // Initialize buffer and size variable
+    int count = 0;
+    size_t rcv_len = 0;
+    char buffer[BUFFERSIZE];
+
+    int s = *((int*) arg);
+    free(arg);
+
+    while (1) {
+        if ((count = recv(s, buffer + rcv_len, BUFFERSIZE - rcv_len, 0) == -1)) {
+            printf("Error during socket read.\n");
+            close(s);
+            exit(1); 
+        }
+        else if (count > 0) {
+            rcv_len = rcv_len + count;
+            parse_buffer(buffer, &rcv_len);
+        }
+
+    }
+}
+
+void parse_buffer(char* buffer, size_t* rcv_len)
+{
+    // Check if we have enough byte to read message length
+    while (*rcv_len > 4 ) {
+        size_t message_len = buffer[3];
+
+        // Check if we received a whole message
+        if (*rcv_len < 4 + message_len) 
+           break; 
+
+        // Add message to global queue
+        enqueue(global_q, buffer, message_len + 4);
+
+        // Remove message from buffer and shuffle bytes of next message to start of the buffer
+        *rcv_len = *rcv_len - 4 - message_len;
+        if (*rcv_len != 0) {
+            memmove(buffer, buffer + 4 + message_len, *rcv_len);
+        }
+    }
+}
+
+int enqueue(Queue* q, char* message, size_t length)
+{
+    return 0;
 }
 
