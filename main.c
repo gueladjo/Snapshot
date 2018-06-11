@@ -19,16 +19,14 @@ typedef struct Neighbor {
     char hostname[100];
 } Neighbor;
 
-typedef struct Queue {
-    char q[1024];
-    size_t len;
-} Queue;
+enum State {Passive = 0, Active = 1};
 
 void* handle_neighbor(void* arg);
 void parse_buffer(char* buffer, size_t* rcv_len);
-int enqueue(Queue* q, char* message, size_t length);
+int handle_message(char* message, size_t length);
 
-Queue* global_q;
+enum State node_state;
+int* timestamp;
 
 int main(int argc, char* argv[])
 {
@@ -54,8 +52,19 @@ int main(int argc, char* argv[])
     snapshot_delay = system_config.snapshot_delay;
     max_number = system_config.max_number;
 
+    // Set up neighbors information and initialize vector timestamp
     int nb_neighbors;
     Neighbor* neighbors = malloc(nb_neighbors * sizeof(Neighbor));
+    timestamp = malloc(nb_nodes * sizeof(int));
+    memset(timestamp, 0, nb_nodes * sizeof(int));
+
+    // Set state of the node
+    if ((node_id % 2) == 0) {
+        node_state = Active;
+    }
+    else {
+        node_state = Passive;
+    }
 
     // Client sockets information
     int* s_client = malloc(nb_neighbors * sizeof(int));
@@ -178,8 +187,8 @@ void parse_buffer(char* buffer, size_t* rcv_len)
         if (*rcv_len < 4 + message_len) 
            break; 
 
-        // Add message to global queue
-        enqueue(global_q, buffer, message_len + 4);
+        // Handle message received
+        handle_message(buffer, message_len + 4);
 
         // Remove message from buffer and shuffle bytes of next message to start of the buffer
         *rcv_len = *rcv_len - 4 - message_len;
@@ -189,7 +198,8 @@ void parse_buffer(char* buffer, size_t* rcv_len)
     }
 }
 
-int enqueue(Queue* q, char* message, size_t length)
+// Check type of message (application or marker) and process it
+int handle_message(char* message, size_t length)
 {
     return 0;
 }
