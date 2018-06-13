@@ -1,6 +1,7 @@
+#include "config.h"
 #include<stdio.h>
 #include<stdlib.h>
-#include"config.h"
+#include<string.h>
 
 int* read_config_file(config * system)
 {    
@@ -10,10 +11,10 @@ int* read_config_file(config * system)
     int tokensRead = 0;
     int tokensInLine = 6; // First valid line has 6 tokens
     int linesRead = 0;
+
     if (fp)
     {
         int system_info[6];
-        
         while (tokensRead < tokensInLine) // First Line
         {
             int input;
@@ -69,8 +70,7 @@ int* read_config_file(config * system)
         tokensInLine = 3; // nodeID hostName listenPort
         linesRead = 0;
 
-        // Begin second part TODO: stop at comments (#)
-        while (linesRead < system->nodes_in_system) // nodes_in_system = nodes in system
+        while (linesRead < system->nodes_in_system) 
         {            
             tokensRead = 0;
             while (tokensRead < tokensInLine)
@@ -130,7 +130,7 @@ int* read_config_file(config * system)
         int tempIndex = 0;
 
         // Third Part
-        // Question: Are we guaranteed a space delimited list?
+
         int * tempArray = (int*)malloc((system->nodes_in_system - 1)* sizeof(int)); //max possible neighbors 
         
         while (linesRead < system->nodes_in_system && !feof(fp))
