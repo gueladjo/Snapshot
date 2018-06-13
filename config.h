@@ -20,4 +20,8 @@ int* read_config_file(config *);
 void display_config(config);
 void free_config(config);
 
+<<<<<<< HEAD
 #endif
+=======
+#endif
+>>>>>>> pr/1

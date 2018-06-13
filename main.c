@@ -10,13 +10,28 @@
 #include<pthread.h>
 #include"config.h"
 
+#include "config.h"
+
+#define BUFFERSIZE 512
+
 typedef struct Neighbor {
     int id;
     int port;
     char hostname[100];
 } Neighbor;
 
+<<<<<<< HEAD
 void* handle_neighbor(void* arg);
+=======
+enum State {Passive = 0, Active = 1};
+
+void* handle_neighbor(void* arg);
+void parse_buffer(char* buffer, size_t* rcv_len);
+int handle_message(char* message, size_t length);
+
+enum State node_state;
+int* timestamp;
+>>>>>>> pr/1
 
 int main(int argc, char* argv[])
 {
@@ -42,8 +57,19 @@ int main(int argc, char* argv[])
     snapshot_delay = system_config.snapshot_delay;
     max_number = system_config.max_number;
 
+    // Set up neighbors information and initialize vector timestamp
     int nb_neighbors;
     Neighbor* neighbors = malloc(nb_neighbors * sizeof(Neighbor));
+    timestamp = malloc(nb_nodes * sizeof(int));
+    memset(timestamp, 0, nb_nodes * sizeof(int));
+
+    // Set state of the node
+    if ((node_id % 2) == 0) {
+        node_state = Active;
+    }
+    else {
+        node_state = Passive;
+    }
 
     // Client sockets information
     int* s_client = malloc(nb_neighbors * sizeof(int));
@@ -134,5 +160,57 @@ int main(int argc, char* argv[])
 // Reads incoming messages from neighbors and places them in a global queue
 void* handle_neighbor(void* arg) 
 {
+<<<<<<< HEAD
     
 }
+=======
+    // Initialize buffer and size variable
+    int count = 0;
+    size_t rcv_len = 0;
+    char buffer[BUFFERSIZE];
+
+    int s = *((int*) arg);
+    free(arg);
+
+    while (1) {
+        if ((count = recv(s, buffer + rcv_len, BUFFERSIZE - rcv_len, 0) == -1)) {
+            printf("Error during socket read.\n");
+            close(s);
+            exit(1); 
+        }
+        else if (count > 0) {
+            rcv_len = rcv_len + count;
+            parse_buffer(buffer, &rcv_len);
+        }
+
+    }
+}
+
+void parse_buffer(char* buffer, size_t* rcv_len)
+{
+    // Check if we have enough byte to read message length
+    while (*rcv_len > 4 ) {
+        size_t message_len = buffer[3];
+
+        // Check if we received a whole message
+        if (*rcv_len < 4 + message_len) 
+           break; 
+
+        // Handle message received
+        handle_message(buffer, message_len + 4);
+
+        // Remove message from buffer and shuffle bytes of next message to start of the buffer
+        *rcv_len = *rcv_len - 4 - message_len;
+        if (*rcv_len != 0) {
+            memmove(buffer, buffer + 4 + message_len, *rcv_len);
+        }
+    }
+}
+
+// Check type of message (application or marker) and process it
+int handle_message(char* message, size_t length)
+{
+    return 0;
+}
+
+>>>>>>> pr/1
