@@ -5,18 +5,22 @@
 #include<unistd.h>
 #include<sys/types.h>
 #include<sys/socket.h>
+#include<time.h>
 #include<netinet/in.h>
 #include<netdb.h>
 #include<pthread.h>
-
 #include "config.h"
 
 #define BUFFERSIZE 512
+#define APP_MSG 'A'
+#define MARKER_MSG 'M'
 
 typedef struct Neighbor {
     int id;
     int port;
     char hostname[100];
+    int server_socket; // I'm not sure if this is the right terminology to call this the 'server' socket, but it's the new socket created from the accept() call
+    int client_socket
 } Neighbor;
 
 enum State {Passive = 0, Active = 1};
@@ -24,26 +28,40 @@ enum State {Passive = 0, Active = 1};
 void* handle_neighbor(void* arg);
 void parse_buffer(char* buffer, size_t* rcv_len);
 int handle_message(char* message, size_t length);
+void send_marker_messages(int sent_by) ;
+void send_msg(int sockfd, char * buffer, int msglen);
+void record_snapshot();
+void activate_node();
 
+// Global parameters
+int nb_nodes;
+int min_per_active, max_per_active;
+int min_send_delay;
+int snapshot_delay;
+int max_number;
+
+// Node Paramters
+int node_id;
+int port;
 enum State node_state;
 int* timestamp;
+int* s_neighbor; 
+
+int msgs_sent; // Messages sent by this node, to be compared with max_number
+int msgs_to_send; // Messages to send on this active session (between min and maxperactive)
+Neighbor* neighbors;
+int nb_neighbors;
 
 int main(int argc, char* argv[])
 {
-    // Global parameters
-    config system_config;
-    int nb_nodes;
-    int min_per_active, max_per_active;
-    int min_send_delay;
-    int snapshot_delay;
-    int max_number;
 
-    // Node parameters
-    int node_id;
-    int port;
+    // Config struct filled when config file parsed
+    config system_config; 
+
+    srand(time(NULL));
 
     read_config_file(&system_config);
-    //display_config(system_config);
+    //display_config(system_config); 
 
     nb_nodes = system_config.nodes_in_system;
     min_per_active = system_config.min_per_active;
@@ -53,8 +71,7 @@ int main(int argc, char* argv[])
     max_number = system_config.max_number;
 
     // Set up neighbors information and initialize vector timestamp
-    int nb_neighbors;
-    Neighbor* neighbors = malloc(nb_neighbors * sizeof(Neighbor));
+    neighbors =  malloc(nb_neighbors * sizeof(Neighbor));
     timestamp = malloc(nb_nodes * sizeof(int));
     memset(timestamp, 0, nb_nodes * sizeof(int));
 
@@ -67,12 +84,10 @@ int main(int argc, char* argv[])
     }
 
     // Client sockets information
-    int* s_client = malloc(nb_neighbors * sizeof(int));
     struct hostent* h;
 
     // Server Socket information
-    int s, s_current;
-    int* s_neighbor;
+    int s;
     struct sockaddr_in sin;
     struct sockaddr_in pin;
     int addrlen;
@@ -83,7 +98,7 @@ int main(int argc, char* argv[])
     int j = 0;
     for (j = 0; j < nb_neighbors; j++) {
         // Create TCP socket
-        if ((s_client[j] = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        if ((neighbors[j].client_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
             printf("Error creating socket\n");
             exit(1); 
         }
@@ -101,7 +116,7 @@ int main(int argc, char* argv[])
         pin.sin_port = htons(neighbors[j].port);
 
         // Connect to port on neighbor
-        if (connect(s_client[j], (struct sockaddr *) &pin, sizeof(pin)) == -1) {
+        if (connect(neighbors[j].client_socket, (struct sockaddr *) &pin, sizeof(pin)) == -1) {
             printf("Error when connecting to neighbor\n");
             exit(1);
         }
@@ -138,17 +153,45 @@ int main(int argc, char* argv[])
 
     int i = 0;
     while (i < nb_neighbors) {
-        if ((s_current = accept(s, (struct sockaddr *) &pin, (socklen_t*)&addrlen)) == -1) {
+        if ((neighbors[i].server_socket = accept(s, (struct sockaddr *) &pin, (socklen_t*)&addrlen)) == -1) {
             printf("Error on accept call.\n");
             exit(1);
         }
-        
-        s_neighbor = (int*) (malloc(sizeof(s_current)));
-        *s_neighbor = s_current;
-
-        pthread_create(&tid, &attr, handle_neighbor, s_neighbor);
+        pthread_create(&tid, &attr, handle_neighbor, neighbors[i].server_socket);
         i++;
     }
+
+    long last_sent_time = 0;
+    char msg[5];
+    while (1)
+    {
+        if (node_state == Active)
+        {
+            if (msgs_to_send > 0)
+            {
+                struct timespec current_time;
+                clock_gettime(CLOCK_REALTIME, &current_time);
+                if (min_send_delay < current_time.tv_nsec/1000000 - last_sent_time);
+                {
+                    // Source | Dest | Protocol | Length | Payload                    
+                    Neighbor neighborToSend = neighbors[(rand() % nb_neighbors)];
+                    snprintf(msg, 5, "%d%dA0", node_id, neighborToSend.id);
+                    send_msg(neighborToSend.server_socket, msg, 4);
+                    last_sent_time = current_time.tv_nsec/100000;
+                    msgs_to_send--;
+                }
+            }
+            else
+            {
+                node_state = Passive;
+            }
+        }
+        else // if node is passive
+        {
+
+        }
+    }
+
     exit(0);
 }
 
@@ -199,8 +242,62 @@ void parse_buffer(char* buffer, size_t* rcv_len)
 }
 
 // Check type of message (application or marker) and process it
+// Source | Dest | Protocol | Length | Payload
 int handle_message(char* message, size_t length)
 {
-    return 0;
+    if (message[2] == APP_MSG)
+    {
+        if (node_state == Passive)
+        {
+            if (msgs_sent < max_number) // Turn active if max_number hasn't been reached, otherwise stay passive
+            {
+                activate_node();
+            }
+        }
+        else // if node_state already active, do nothing
+        {
+        }
+    }
+    else if (message[2] == MARKER_MSG)
+    {
+        record_snapshot();
+        char sent_by = message[0];
+        send_marker_messages(atoi(&sent_by));
+    }
 }
 
+void send_marker_messages(int sent_by) 
+{
+    int i;
+    char msg[5];
+    for (i = 0; i < nb_neighbors; i++)
+    {
+        if (neighbors[i].id != sent_by) // Don't sent marker msg to sender
+        {
+            snprintf(msg, 5, "%d%dM0", node_id, neighbors[i].id);
+            send_msg(neighbors[i].client_socket, msg, 4);
+        }
+    }
+}
+
+// Function to send whole message
+void send_msg(int sockfd, char * buffer, int msglen)
+{
+    int bytes_to_send = msglen; // |Source | Destination | Protocol ('M') | Length (0)
+    while (bytes_to_send > 0)
+    {
+        bytes_to_send -= send(sockfd, buffer + (msglen - bytes_to_send), msglen, 0);
+    }
+}
+
+
+void activate_node()
+{
+    msgs_to_send = (rand() % (max_per_active + 1 - min_per_active)) + min_per_active; // Between max and min per active
+    node_state = Active;
+}
+
+void record_snapshot()
+{
+
+}
