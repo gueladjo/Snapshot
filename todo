@@ -1,3 +1,11 @@
+***** Message format *****
+
+_ Source ID : 1 byte
+_ Destination ID : 1 byte
+_ Message Type : 1 byte
+_ Length : 1 byte
+_ Payload : vector clock for application messages
+
 ***** PARSING INFORMATION *****
 
 
