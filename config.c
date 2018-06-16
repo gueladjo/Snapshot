@@ -138,59 +138,75 @@ int* read_config_file(config * system)
             char charInput = '\0';
             int input;
             int matched;
-            int neighborIndex;            
+            int neighborIndex;     
+
+
+            charInput = fgetc(fp);
             
-            matched = fscanf(fp, "%d", &input);
-
-            if (matched)
-            {               
-                tempArray[tempIndex] = input;
-                tempIndex++;
-            }
-            else
+            if (charInput != ' ' && charInput != '#' && charInput != '\n')
             {
-                while(charInput != '\n' && !feof(fp))
+                if (charInput <= 57 && charInput >= 48)
                 {
+                    char tensPlace = charInput;
+                    char onesPlace;
                     charInput = fgetc(fp);
+                    if (charInput <= 57 && charInput >= 48)
+                    {
+                        onesPlace = charInput;
+                        input = atoi(&tensPlace)*10 + atoi(&onesPlace);
+                        
+                    }
+                    else 
+                    {
+                        input = atoi(&tensPlace);
+                        tempArray[tempIndex] = input;
+                        tempIndex++;
+                        if (charInput == '\n' ||charInput == '#' || feof(fp))
+                        {
+                            if (tempIndex >0)
+                            {
+                            system->neighbors[linesRead] = (int*)malloc((tempIndex+1) * sizeof(int));
+                                
+                                for (neighborIndex = 0; neighborIndex < tempIndex; neighborIndex++) // tempIndex = neighborCount for node at lineRead (first line = fisrt node)
+                                {
+                                    system->neighbors[linesRead][neighborIndex] = tempArray[neighborIndex];
+                                }
+                                system->neighborCount[linesRead] = tempIndex;
+                                tempIndex = 0;
+                                linesRead++;
+                            }
+                            if (charInput == '#')
+                            {
+                                while (charInput != '\n' )
+                                {
+                                    charInput = fgetc(fp);
+                                }
+                            }
+                        }
+                    }
                 }
-
-
-                system->neighbors[linesRead] = (int*)malloc((tempIndex+1) * sizeof(int));
+            }
+            else if (charInput == '\n' ||charInput == '#' || feof(fp))
+            {
                 if (tempIndex >0)
                 {
+                system->neighbors[linesRead] = (int*)malloc((tempIndex+1) * sizeof(int));
+                    
                     for (neighborIndex = 0; neighborIndex < tempIndex; neighborIndex++) // tempIndex = neighborCount for node at lineRead (first line = fisrt node)
                     {
                         system->neighbors[linesRead][neighborIndex] = tempArray[neighborIndex];
                     }
+                    system->neighborCount[linesRead] = tempIndex;
+                    tempIndex = 0;
+                    linesRead++;
                 }
-                system->neighborCount[linesRead] = tempIndex;
-                tempIndex = 0;
-                linesRead++;
-            }
-            
-            if (matched)
-            {
-                charInput = fgetc(fp);
+ 
                 if (charInput == '#')
                 {
-                    while(charInput != '\n' && !feof(fp))
+                    while (charInput != '\n')
                     {
                         charInput = fgetc(fp);
                     }
-
-
-                    system->neighbors[linesRead] = (int*)malloc((tempIndex+1) * sizeof(int));
-                    if (tempIndex >0)
-                    {
-                        for (neighborIndex = 0; neighborIndex < tempIndex; neighborIndex++) // tempIndex = neighborCount for node at lineRead (first line = fisrt node)
-                        {
-                            system->neighbors[linesRead][neighborIndex] = tempArray[neighborIndex];
-                        }
-     
-                        system->neighborCount[linesRead] = tempIndex;
-                        tempIndex = 0;
-                        linesRead++;         
-                    }     
                 }
             }
         }
