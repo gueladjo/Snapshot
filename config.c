@@ -264,3 +264,96 @@ void free_config(config system_config)
     }
     free(system_config.neighbors);
 }
+
+// Returns a parallel array that is the node neighbors for the spanning tree
+int ** create_spanning_tree(int ** out_tree_neighbor_count, int* node_ids, int** neighbor_at, int * num_neighbors_at, int num_nodes)
+{
+    int * visited = (int * )malloc(num_nodes * sizeof(int));
+    int ** tree = (int **)malloc(num_nodes * sizeof(int*));
+    int j;
+    for (j = 0; j < num_nodes; j++)
+    {
+        tree[j] = (int*)malloc(0);
+    }
+
+    *out_tree_neighbor_count = (int * )malloc(num_nodes *  sizeof(int));
+    int ** neighbor_index_at = convertToIndex(node_ids, neighbor_at,num_neighbors_at, num_nodes);
+    memset(visited, 0, num_nodes*sizeof(int));
+    memset(*out_tree_neighbor_count, 0, num_nodes*sizeof(int));
+    DFS(0, neighbor_index_at, num_neighbors_at, num_nodes, tree, *out_tree_neighbor_count, visited);
+
+    free (visited);
+    int i;
+    for (i = 0; i< num_nodes; i++)
+    {
+        free(neighbor_index_at[i]);
+    }
+    free (neighbor_index_at);
+    return tree;
+}
+
+int **  DFS(int current_index, int ** neighbor_indices, int * num_neighbors_at, int num_nodes, int ** tree, int * tree_neighbor_count, int * visited)
+{
+    int i = 0;
+    visited[current_index] = 1;
+
+    while ( i < num_neighbors_at[current_index])
+    {      
+        if (!visited[neighbor_indices[current_index][i]])
+        {
+            // Set unvisited neighbor as tree neighbor
+            tree_neighbor_count[current_index]++;
+            tree[current_index] = (int*)realloc(tree[current_index], tree_neighbor_count[current_index] * sizeof(int));
+            tree[current_index][tree_neighbor_count[current_index] - 1] = neighbor_indices[current_index][i];
+
+            //Reverse: set neighbor's neighbor as self
+            tree_neighbor_count[neighbor_indices[current_index][i]]++;            
+            tree[neighbor_indices[current_index][i]]  = (int*)realloc(tree[neighbor_indices[current_index][i]], tree_neighbor_count[neighbor_indices[current_index][i]] * sizeof(int));
+            tree[neighbor_indices[current_index][i]][tree_neighbor_count[neighbor_indices[current_index][i]] - 1] = current_index;
+            
+            // visit neighbor 
+            DFS(neighbor_indices[current_index][i], neighbor_indices, num_neighbors_at, num_nodes, tree, tree_neighbor_count, visited);
+        }
+        else
+            i++;
+    }
+    return tree; 
+}
+
+int ** convertToIndex(int * node_ids, int ** neighbor_ids, int * num_neighbors_at, int num_nodes)
+{
+
+    int ** nodeNeighborIndices = (int ** )malloc(num_nodes * sizeof(int*));
+    int i, j;
+    for (i = 0; i< num_nodes; i++)
+    {
+        nodeNeighborIndices[i] = (int*) malloc(num_neighbors_at[i] * sizeof(int));
+        for (j = 0; j < num_neighbors_at[j]; j++)
+        {
+            nodeNeighborIndices[i][j] = find(neighbor_ids[i][j], node_ids, num_nodes); 
+        }
+    }
+    return nodeNeighborIndices;
+
+}
+
+void printArray(int * array, int length)
+{
+    int i;
+    for (i = 0; i < length; i++)
+    {
+        printf("%d ", array[i]);
+    }
+    printf("\n");
+}
+
+int find(int value, int * array, int length)
+{
+    int i;
+    for (i = 0; i < length; i++)
+    {
+        if (array[i] == value)
+            return i;
+    }
+    return -1;
+}
