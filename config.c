@@ -281,7 +281,14 @@ void free_config(config system_config)
     free(system_config.neighbors);
 }
 
-// Returns a parallel array that is the node neighbors for the spanning tree
+// Create Spanning tree returns an array that is parallel to nodeIDs
+// each element is another array that is the indices (of nodeID) that are spanning tree neighbors
+// Example: If nodeIDs are      2 4 1 6 10
+// and the spanning tree neighbors of node 2 are 4 and 1. 
+// then tree[0] would be [1 | 2]
+// That is, the neighbors of node at index 0 are index 1 and 2
+
+                            // Pass by reference, not a 2d array
 int ** create_spanning_tree(int ** out_tree_neighbor_count, int* node_ids, int** neighbor_at, int * num_neighbors_at, int num_nodes)
 {
     int * visited = (int * )malloc(num_nodes * sizeof(int));
@@ -336,6 +343,12 @@ int **  DFS(int current_index, int ** neighbor_indices, int * num_neighbors_at, 
     return tree; 
 }
 
+
+// Converts neighbor_ids array into neighbor_indices array
+// Example: If nodeIDs are      2 4 1 6 10
+// and the neighbors of 2 (index 0) are 1, 6, and 10
+// (input) neighbor_ids[0] = [1 | 6 | 10]
+// (output) neighbor_indices[0] = [2 | 3 | 4]
 int ** convertToIndex(int * node_ids, int ** neighbor_ids, int * num_neighbors_at, int num_nodes)
 {
 
@@ -363,6 +376,7 @@ void printArray(int * array, int length)
     printf("\n");
 }
 
+// returns index of value in array
 int find(int value, int * array, int length)
 {
     int i;
