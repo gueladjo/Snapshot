@@ -289,7 +289,7 @@ void free_config(config system_config)
 // That is, the neighbors of node at index 0 are index 1 and 2
 
                             // Pass by reference, not a 2d array
-int ** create_spanning_tree(int ** out_tree_neighbor_count, int* node_ids, int** neighbor_at, int * num_neighbors_at, int num_nodes)
+int ** create_spanning_tree(int ** out_tree_neighbor_count, int ** out_parents, int* node_ids, int** neighbor_at, int * num_neighbors_at, int num_nodes)
 {
     int * visited = (int * )malloc(num_nodes * sizeof(int));
     int ** tree = (int **)malloc(num_nodes * sizeof(int*));
@@ -300,10 +300,12 @@ int ** create_spanning_tree(int ** out_tree_neighbor_count, int* node_ids, int**
     }
 
     *out_tree_neighbor_count = (int * )malloc(num_nodes *  sizeof(int));
+    *out_parents = (int * )malloc(num_nodes *  sizeof(int));
+    
     int ** neighbor_index_at = convertToIndex(node_ids, neighbor_at,num_neighbors_at, num_nodes);
     memset(visited, 0, num_nodes*sizeof(int));
     memset(*out_tree_neighbor_count, 0, num_nodes*sizeof(int));
-    DFS(0, neighbor_index_at, num_neighbors_at, num_nodes, tree, *out_tree_neighbor_count, visited);
+    DFS(0, neighbor_index_at, num_neighbors_at, num_nodes, tree, *out_tree_neighbor_count, visited, *out_parents);
 
     free (visited);
     int i;
@@ -315,7 +317,7 @@ int ** create_spanning_tree(int ** out_tree_neighbor_count, int* node_ids, int**
     return tree;
 }
 
-int **  DFS(int current_index, int ** neighbor_indices, int * num_neighbors_at, int num_nodes, int ** tree, int * tree_neighbor_count, int * visited)
+int **  DFS(int current_index, int ** neighbor_indices, int * num_neighbors_at, int num_nodes, int ** tree, int * tree_neighbor_count, int * visited, int * parents)
 {
     int i = 0;
     visited[current_index] = 1;
@@ -333,9 +335,11 @@ int **  DFS(int current_index, int ** neighbor_indices, int * num_neighbors_at, 
             tree_neighbor_count[neighbor_indices[current_index][i]]++;            
             tree[neighbor_indices[current_index][i]]  = (int*)realloc(tree[neighbor_indices[current_index][i]], tree_neighbor_count[neighbor_indices[current_index][i]] * sizeof(int));
             tree[neighbor_indices[current_index][i]][tree_neighbor_count[neighbor_indices[current_index][i]] - 1] = current_index;
-            
+
+            // set neighbor's parent as self
+            parents[neighbor_indices[current_index][i]] = current_index;
             // visit neighbor 
-            DFS(neighbor_indices[current_index][i], neighbor_indices, num_neighbors_at, num_nodes, tree, tree_neighbor_count, visited);
+            DFS(neighbor_indices[current_index][i], neighbor_indices, num_neighbors_at, num_nodes, tree, tree_neighbor_count, visited, parents);
         }
         else
             i++;
