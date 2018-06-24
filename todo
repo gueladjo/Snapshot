@@ -5,6 +5,7 @@ _ Destination ID : 1 byte
 _ Message Type : 1 byte
 _ Length : 1 byte
 _ Payload : vector clock for application messages
+Format of payload: "C0-C1-C2- ... -CN"?
 
 ***** PARSING INFORMATION *****
 
