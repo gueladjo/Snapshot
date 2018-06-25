@@ -41,6 +41,8 @@ typedef struct Snapshot {
 } Snapshot;
 
 Snapshot* snapshot;
+Snapshot** snapshots;
+int* number_received;
 
 int nb_snapshots;
 int last_snapshot_id = -1;
@@ -138,6 +140,14 @@ int main(int argc, char* argv[])
 
     timestamp = malloc(nb_nodes * sizeof(int));
     memset(timestamp, 0, nb_nodes * sizeof(int));
+    
+    int dimension = 100;
+    number_received = malloc(dimension * sizeof(int));
+    snapshots = malloc(dimension * sizeof(Snapshot*));
+
+    for (i = 0; i < dimension; i++) {
+        snapshots[i] = malloc(nb_nodes * sizeof(Snapshot));
+    }
 
     int *  tree_count; // num of elements in each of tree's arrays 
     int ** tree = create_spanning_tree(&tree_count, &parent, system_config.nodeIDs, system_config.neighbors, system_config.neighborCount, system_config.nodes_in_system);
@@ -396,7 +406,45 @@ int handle_message(char* message, size_t length)
         }
 
         else {
+            char* payload = message_payload(message);
+            int source, snapshot_id, state, channel_state;
 
+            sscanf(payload, "%2d%3d%1d%1d", &source, &snapshot_id, &state, &channel_state);
+            int* timestamp_vec = parse_vector(payload + 7);
+
+            snapshots[snapshot_id][source].state = state;
+            snapshots[snapshot_id][source].channel = channel_state;
+            snapshots[snapshot_id][source].timestamp = timestamp_vec;
+
+            number_received[snapshot_id]++;
+
+            if (number_received[snapshot_id] == node_id) {
+                int i, k, max;
+                
+                int termination_detected = 0;
+                for (i = 0; i < nb_nodes; i++) {
+                    if (snapshots[snapshot_id][i].state == Active)
+                        termination_detected = 1;
+                    if (snapshots[snapshot_id][i].channel == NotEmpty) 
+                        termination_detected = 1;
+                }
+
+                int consistent = 1;
+                for (i = 0; (i < nb_nodes) && consistent; i++) {
+                    max = snapshots[snapshot_id][i].timestamp[i]; 
+                    for (k = 0; (k < nb_nodes) && consistent; k++) {
+                        if (snapshots[snapshot_id][k].timestamp[i] >= max) {
+                            printf("INCONSISTENT SNAPSHOT\n");
+                            consistent = 0;
+                        } 
+                    }
+                } 
+                    
+                if (termination_detected) {
+                    // send halt msg to all neighbors then exit
+                }
+
+            }
         }
     }
 
