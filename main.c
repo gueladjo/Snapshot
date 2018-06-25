@@ -14,14 +14,16 @@
 #define BUFFERSIZE 512
 #define APP_MSG 'A'
 #define MARKER_MSG 'M'
+#define CONVERGE_CAST 'C'
+#define HALT 'H'
 #define MSG_BUFFER_SIZE 100
 
 typedef struct Neighbor {
     int id;
     int port;
     char hostname[100];
-    int server_socket; // I'm not sure if this is the right terminology to call this the 'server' socket, but it's the new socket created from the accept() call
-    int client_socket;
+    int receive_socket; // I'm not sure if this is the right terminology to call this the 'server' socket, but it's the new socket created from the accept() call
+    int send_socket;
 } Neighbor;
 
 enum Color {Blue = 0, Red = 1};
@@ -41,7 +43,7 @@ typedef struct Snapshot {
 Snapshot* snapshot;
 
 int nb_snapshots;
-int last_snapshot_id;
+int last_snapshot_id = -1;
 
 void* handle_neighbor(void* arg);
 void parse_buffer(char* buffer, size_t* rcv_len);
@@ -49,26 +51,22 @@ int handle_message(char* message, size_t length);
 
 char * create_vector_msg(int * vector_clk);
 int * parse_vector(char * char_vector);
-void send_marker_messages(int sent_by, int snapshot_id) ;
+void send_marker_messages(int snapshot_id) ;
 
 void send_msg(int sockfd, char * buffer, int msglen);
 int receive_message(char * message, int length);
 int compare_timestamps(int * incoming_ts);
-void deliver_message(char * message, int length);
-void buffer_message(char * message, int length);
-void check_buffered_messages();
-void remove_from_buffer(int index);
+int merge_timestamps(int * incoming_ts);
 
 int message_source(char * msg);
 int message_dst(char * msg);
 char message_type(char * msg);
 char * message_payload(char * msg);
 
-
 void record_snapshot();
 void snapshot_channel(char* message);
 void activate_node();
-void* detect_termination();
+void* snapshot_handler();
 
 // Global parameters
 int nb_nodes;
@@ -86,6 +84,7 @@ int port;
 enum State node_state;
 int* timestamp;
 int* s_neighbor;
+int * parent;
 
 char * msg_buffer[MSG_BUFFER_SIZE];
 int buffer_msg_length[MSG_BUFFER_SIZE]; // length of each message in buffer;
@@ -104,7 +103,7 @@ int main(int argc, char* argv[])
 
     srand(time(NULL));
 
-    read_config_file(&system_config);
+    read_config_file(&system_config, argv[2]);
     display_config(system_config); 
 
     nb_nodes = system_config.nodes_in_system;
@@ -114,22 +113,35 @@ int main(int argc, char* argv[])
     snapshot_delay = system_config.snapshot_delay;
     max_number = system_config.max_number;
 
-    node_id = 0;
+    sscanf(argv[1], "%i", &node_id);
 
     this_index= find(node_id, system_config.nodeIDs, system_config.nodes_in_system);
     nb_neighbors = system_config.neighborCount[this_index];
+
     // Set up neighbors information and initialize vector timestamp
     neighbors =  malloc(nb_neighbors * sizeof(Neighbor));
+
     snapshot =  malloc(100 * sizeof(Snapshot));
+    int i, k;
+    for (i = 0; i < 100; i++) {
+        snapshot[i].timestamp = malloc(nb_nodes * sizeof(int));
+        snapshot[i].neighbors = malloc(nb_neighbors * sizeof(enum Marker));
+
+        snapshot[i].color = Blue;
+        snapshot[i].channel = Empty;
+        snapshot[i].nb_marker = 0;
+
+        for (k = 0; k < nb_neighbors; k++) {
+            snapshot[i].neighbors[k] = NotReceived;
+        }
+    }
+
     timestamp = malloc(nb_nodes * sizeof(int));
     memset(timestamp, 0, nb_nodes * sizeof(int));
 
-
     int *  tree_count; // num of elements in each of tree's arrays 
-    int * parent;
     int ** tree = create_spanning_tree(&tree_count, &parent, system_config.nodeIDs, system_config.neighbors, system_config.neighborCount, system_config.nodes_in_system);
     // allocate snapshot_neighbors array
-    int i, k;
     for (i = 0; i < system_config.neighborCount[this_index]; i++)
     {
         neighbors[i].id = system_config.neighbors[this_index][i];
@@ -162,11 +174,22 @@ int main(int argc, char* argv[])
         node_state = Passive;
     }
 
- // Create client sockets to neighbors of the node
+    // Client sockets information
+    struct hostent* h;
+
+    // Server Socket information
+    int s;
+    struct sockaddr_in sin;
+    struct sockaddr_in pin;
+    int addrlen;
+    pthread_t tid;
+    pthread_attr_t attr;
+
+    // Create client sockets to neighbors of the node
     int j = 0;
     for (j = 0; j < nb_neighbors; j++) {
         // Create TCP socket
-        if ((neighbors[j].client_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        if ((neighbors[j].send_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
             printf("Error creating socket\n");
             exit(1); 
         }
@@ -184,7 +207,7 @@ int main(int argc, char* argv[])
         pin.sin_port = htons(neighbors[j].port);
 
         // Connect to port on neighbor
-        if (connect(neighbors[j].client_socket, (struct sockaddr *) &pin, sizeof(pin)) == -1) {
+        if (connect(neighbors[j].send_socket, (struct sockaddr *) &pin, sizeof(pin)) == -1) {
             printf("Error when connecting to neighbor\n");
             exit(1);
         }
@@ -221,54 +244,51 @@ int main(int argc, char* argv[])
 
     i = 0;
     while (i < nb_neighbors) {
-        if ((neighbors[i].server_socket = accept(s, (struct sockaddr *) &pin, (socklen_t*)&addrlen)) == -1) {
+        if ((neighbors[i].receive_socket = accept(s, (struct sockaddr *) &pin, (socklen_t*)&addrlen)) == -1) {
             printf("Error on accept call.\n");
             exit(1);
         }
-        pthread_create(&tid, &attr, handle_neighbor, &(neighbors[i].server_socket));
+        pthread_create(&tid, &attr, handle_neighbor, &(neighbors[i].receive_socket));
         i++;
     }
 
-    // Create termination detection thread if node id is 0
+    // Create snapshot thread if node id is 0
     if (node_id == 0) {
         pthread_t pid;
-        pthread_create(&pid, &attr, detect_termination, NULL);
+        pthread_create(&pid, &attr, snapshot_handler, NULL);
     }
 
-    int last_sent_time = 0;
-    int last_sent_time_s = 0;
     int total_length;
+    struct timespec current_time, previous_time;
+    clock_gettime(CLOCK_REALTIME, &previous_time);
+    uint64_t delta_ms;
+    char msg[250];
     while (1)
     {
         if (node_state == Active)
         {
             if (msgs_to_send > 0)
             {
-                struct timespec current_time;
                 clock_gettime(CLOCK_REALTIME, &current_time);
-                 
+                delta_ms = (current_time.tv_sec - previous_time.tv_sec) * 1000 + (current_time.tv_nsec - previous_time.tv_nsec) / 1000000;
                     // Not totally correct but will do for now
-                if ((current_time.tv_sec - last_sent_time_s > min_send_delay/1000)  ||  (min_send_delay < current_time.tv_nsec/1000000 - last_sent_time);
+                if (delta_ms > min_send_delay)
                 {
                     // Source | Dest | Protocol | Length | Payload                    
                     Neighbor neighborToSend = neighbors[(rand() % nb_neighbors)];
-                    total_length = 5 + determine_msg_length(timestamp);
-                    snprintf(msg, total_length, "%d%dA%s", node_id, neighborToSend.id, create_vector_msg(timestamp));
-                    send_msg(neighborToSend.server_socket, msg, 4);
-                    last_sent_time_ns = current_time.tv_nsec/100000;
-                    last_sent_time_s = current_time.tv_sec;
+                    total_length = 5 + 3 * nb_nodes + 1;
+                    snprintf(msg, total_length, "%02d%02dA%s", node_id, neighborToSend.id, create_vector_msg(timestamp));
+                    send_msg(neighborToSend.send_socket, msg, total_length - 1);
+                    previous_time.tv_sec = current_time.tv_sec;
+                    previous_time.tv_nsec = current_time.tv_nsec;
                     msgs_to_send--;
-                    timestamp[this_index]++;                    
+                    timestamp[node_id]++;                    
                 }
             }
             else
             {
                 node_state = Passive;
             }
-        }
-        else // if node is passive
-        {
-
         }
     }
 
@@ -304,13 +324,29 @@ void* handle_neighbor(void* arg)
 //|##|##|Char|###|###|###|...|###| (Pipes not included in actual messages)
 void parse_buffer(char* buffer, size_t* rcv_len)
 {
-    // Need to modify this for new message format 
-
     // Check if we have enough byte to read message length
+    int message_len = 0;
     while (*rcv_len > 4 ) {
-        size_t message_len = buffer[3];
-
         // Check if we received a whole message
+        char protocol = buffer[4];
+        switch (protocol) {
+            case 'A':
+                message_len = 3 * nb_nodes;
+                break;
+            case 'M':
+                message_len = 3;
+                break;
+            case 'C':
+                message_len = 7 + 3 * nb_nodes;
+                break;
+            case 'H':
+                message_len = 0;
+                break;
+
+            default:
+                printf("WRONG!\n");
+        }
+
         if (*rcv_len < 4 + message_len) 
            break; 
 
@@ -339,30 +375,54 @@ int handle_message(char* message, size_t length)
             }
         }
         receive_message(message, (int)length);
-        snapshot_channel(message);
+        if (last_snapshot_id != -1) 
+            snapshot_channel(message);
     }
     else if (message_type(message) == MARKER_MSG)
     {
         record_snapshot(message);
     }
+
+    else if (message_type(message) == CONVERGE_CAST) {
+        if (node_id != 0) {
+            int parent_id = system_config.nodeIDs[parent[this_index]];
+            int i;
+            for (i = 0; i < nb_neighbors; i++) {
+                if (neighbors[i].id == parent_id) {
+                    send_msg(neighbors[i].send_socket, message, (int) length);
+                    break;
+                }
+            }
+        }
+
+        else {
+
+        }
+    }
+
+    else if (message_type(message) == HALT) {
+        int i;
+        for (i = 0; i < nb_neighbors; i++) {
+            if (neighbors[i].id != message_source(message)) {
+                char msg[10];
+                snprintf(msg, 6, "%02d%02dH", node_id, neighbors[i].id);
+                send_msg(neighbors[i].send_socket, message, (int) length);
+            }
+        }
+        exit(0);
+    }
 }
 
-
 // Needs to be changed from broadcast to tree 
-void send_marker_messages(int sent_by, int snapshot_id) 
+void send_marker_messages(int snapshot_id) 
 {
     int i;
-    char msg[200];
-        // src  dst prot     vector     \0
-    length = 2 + 2 + 1 + nb_nodes * 3 + 1; 
+    char msg[50];
+
     for (i = 0; i < nb_neighbors; i++)
     {
-        
-        if (neighbors[i].id != sent_by) // Don't send marker msg to sender
-        {
-            snprintf(msg, 5, "%d%dM1%d", node_id, neighbors[i].id, snapshot_id);
-            send_msg(neighbors[i].client_socket, msg, 4);
-        }
+            snprintf(msg, 9, "%02d%02dM%3d", node_id, neighbors[i].id, snapshot_id);
+            send_msg(neighbors[i].send_socket, msg, 8);
     }
 }
 
@@ -384,9 +444,9 @@ void activate_node()
 
 void record_snapshot(char* message)
 {
-    char sent_by = message[0];
-    // Format up to change
-    int snapshot_id = atoi(&message[4]);
+    int sent_by = message_source(message);
+    int snapshot_id;
+    sscanf(message_payload(message), "%i", &snapshot_id);
 
     // If this is the first marker received, record state and send marker messages
     if (snapshot[snapshot_id].color == Blue) {
@@ -394,17 +454,31 @@ void record_snapshot(char* message)
         snapshot[snapshot_id].state = node_state;
         memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(timestamp));
         snapshot[snapshot_id].color = Red;
-        send_marker_messages(node_id, atoi(&snapshot_id));
+        send_marker_messages(snapshot_id);
     }
 
     else {
         // Marker message by neighbor received: stop recording channel for this neighbor
-        snapshot[snapshot_id].neighbors[atoi(&sent_by)] = Received;  
+        snapshot[snapshot_id].neighbors[sent_by] = Received;  
         snapshot[snapshot_id].nb_marker = snapshot[snapshot_id].nb_marker + 1;   
 
         // Detect if snapshot is ready to be sent to node 0
         if (nb_neighbors == snapshot[snapshot_id].nb_marker) {
             // Converge cast state (vector clock timestamp + node state + channel state) to node 0
+ 
+            int length = nb_nodes * 3 +  12;
+            int timestamp_length = nb_nodes * 3;
+            char* converge_msg = (char*)malloc(length * sizeof(char) + 3);
+
+            snprintf(converge_msg, length + 1, "%02d%02dC%02d%03d%c%c%s", node_id, parent[node_id]
+                   , node_id, snapshot_id, snapshot[snapshot_id].state, snapshot[snapshot_id].channel, create_vector_msg(timestamp));
+            int i = 0;
+            for (i = 0; i < nb_neighbors; i++) {
+                if (neighbors[i].id == parent[node_id]) {
+                    send_msg(neighbors[i].send_socket, converge_msg, length);
+                    break;
+                }
+            }
         }
     }
 }
@@ -412,66 +486,47 @@ void record_snapshot(char* message)
 // Check if message should be included in channel state of snapshot
 void snapshot_channel(char* message)
 {
-    char sent_by = message[0];
-    if (snapshot[last_snapshot_id].neighbors[atoi(&sent_by)] == NotReceived) {
+    int sent_by = message_source(message);
+    if (snapshot[last_snapshot_id].neighbors[sent_by] == NotReceived) {
         snapshot[last_snapshot_id].channel = NotEmpty;
     }    
 }
 
-void* detect_termination()
+void* snapshot_handler()
 {
-    long last_snapshot = 0;
     int snapshot_id = 0;
 
-    // Need to fix clock
+    struct timespec current_time, previous_time;
+    clock_gettime(CLOCK_REALTIME, &previous_time);
+    uint64_t delta_ms;
+
     while(1) {
         struct timespec current_time;
         clock_gettime(CLOCK_REALTIME, &current_time);
-        if (snapshot_delay < current_time.tv_nsec/1000000 - last_snapshot) {
-            last_snapshot = current_time.tv_nsec/1000000;
-            
+        delta_ms = (current_time.tv_sec - previous_time.tv_sec) * 1000 + (current_time.tv_nsec - previous_time.                 tv_nsec) / 1000000;
+
+        if (delta_ms > snapshot_delay) {
             // Record node 0 state and mark it as "red"
             snapshot[snapshot_id].state = node_state;
+            previous_time.tv_sec = current_time.tv_sec;
+            previous_time.tv_nsec = current_time.tv_nsec;
+ 
             memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(timestamp));
             snapshot[snapshot_id].color = Red;
-            send_marker_messages(node_id, snapshot_id);
+            send_marker_messages(snapshot_id);
             snapshot_id++;
         }
     }
-}
-
-// given a vector clock, how large is the message
-int determine_msg_length(int * vector_clk)
-{
-    int i, count;
-    for (i = 0, count = 0; i < nb_nodes; i++)
-    {
-        if (vector_clk[i] >= 10)
-        {
-            count +=2;
-        }
-        else
-        {
-            count++;
-        }
-    }
-    count += nb_nodes-1; // dashes
 }
 
 // Takes the message and determines whether it should be delivered or not
 int receive_message(char * message, int length)
 {
     int * received_clk = parse_vector(message_payload(message));
-
-    int deliver = compare_timestamps(received_clk);
-
-    if (deliver)
-        deliver_message(message, length);
-    else
-        buffer_message(message, length);
+    merge_timestamps(received_clk);
+    timestamp[node_id]++;
 
     free(received_clk);
-    check_buffered_messages();
 }
 
 // returns 1 when incoming <= own, 0 when not
@@ -486,55 +541,6 @@ int compare_timestamps(int * incoming_ts)
             deliver = 0;
     }
     return deliver;
-}
-
-// Takes the message and updates the vector clock accordingly
-void deliver_message(char * message, int length)
-{
-
-    int source = message[0] - '0';
-    int source_index = find(source, system_config.nodeIDs, nb_nodes);
-
-    merge_timestamps(parse_vector(message_payload(message)));
-    timestamp[source_index]++;
-    
-}
-
-void buffer_message(char * message, int length)
-{
-    msg_buffer[buffer_length] = message;
-    buffer_msg_length[buffer_length] = length;
-    buffer_length++;
-    if (buffer_length > MSG_BUFFER_SIZE)
-    {printf("Node %d buffer overflow", node_id);}
-        //error, buffer overflow
-    
-}
-
-void check_buffered_messages()
-{
-    int * buffered_vector;
-    int i;
-    for(i = 0; i < buffer_length; i++)
-    {
-        buffered_vector = parse_vector(message_payload(msg_buffer[i]));
-        if (compare_timestamps(buffered_vector))
-        {
-            deliver_message(msg_buffer[i], buffer_msg_length[i]);
-            remove_from_buffer(i); // possibly dangerous? messing with array while iterating
-            i--;                   // Go back a step to account for removing
-        }
-    }
-}
-
-void remove_from_buffer(int index)
-{
-    int i = index;
-    for(i; i< buffer_length - 1; i++)
-    {
-        msg_buffer[i] == msg_buffer[i+1]; // shift to fill buffer without empty 
-    }
-    buffer_length--;
 }
 
 //given a vector clock, create message payload in the form of "C0-C1-C2 - ... - CN"  Each element corresponds to the clock at the node at the index (C0 = index 0)
