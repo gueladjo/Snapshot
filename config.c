@@ -3,9 +3,8 @@
 #include<stdlib.h>
 #include<string.h>
 
-int* read_config_file(config * system)
+int* read_config_file(config * system, char* fileName)
 {    
-    char * fileName = "config.txt";
     FILE * fp = fopen(fileName, "r");
 
     int tokensRead = 0;
