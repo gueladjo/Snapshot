@@ -59,6 +59,12 @@ void buffer_message(char * message, int length);
 void check_buffered_messages();
 void remove_from_buffer(int index);
 
+int message_source(char * msg);
+int message_dst(char * msg);
+char message_type(char * msg);
+char * message_payload(char * msg);
+
+
 void record_snapshot();
 void snapshot_channel(char* message);
 void activate_node();
@@ -94,13 +100,12 @@ Neighbor* snapshot_neighbors; // Neighbors in the spanning tree
 
 int main(int argc, char* argv[])
 {
-
     // Config struct filled when config file parsed
 
     srand(time(NULL));
 
     read_config_file(&system_config);
-    //display_config(system_config); 
+    display_config(system_config); 
 
     nb_nodes = system_config.nodes_in_system;
     min_per_active = system_config.min_per_active;
@@ -109,17 +114,28 @@ int main(int argc, char* argv[])
     snapshot_delay = system_config.snapshot_delay;
     max_number = system_config.max_number;
 
+    node_id = 0;
+
     this_index= find(node_id, system_config.nodeIDs, system_config.nodes_in_system);
+    nb_neighbors = system_config.neighborCount[this_index];
     // Set up neighbors information and initialize vector timestamp
     neighbors =  malloc(nb_neighbors * sizeof(Neighbor));
     snapshot =  malloc(100 * sizeof(Snapshot));
     timestamp = malloc(nb_nodes * sizeof(int));
     memset(timestamp, 0, nb_nodes * sizeof(int));
 
+
     int *  tree_count; // num of elements in each of tree's arrays 
-    int ** tree = create_spanning_tree(&tree_count, system_config.nodeIDs, system_config.neighbors, system_config.neighborCount, system_config.nodes_in_system);
+    int * parent;
+    int ** tree = create_spanning_tree(&tree_count, &parent, system_config.nodeIDs, system_config.neighbors, system_config.neighborCount, system_config.nodes_in_system);
     // allocate snapshot_neighbors array
     int i, k;
+    for (i = 0; i < system_config.neighborCount[this_index]; i++)
+    {
+        neighbors[i].id = system_config.neighbors[this_index][i];
+    }
+
+
     for(i = 0; i < tree_count[this_index]; i++)
     {
         for (k = 0; k < nb_neighbors; k++)
@@ -146,18 +162,7 @@ int main(int argc, char* argv[])
         node_state = Passive;
     }
 
-    // Client sockets information
-    struct hostent* h;
-
-    // Server Socket information
-    int s;
-    struct sockaddr_in sin;
-    struct sockaddr_in pin;
-    int addrlen;
-    pthread_t tid;
-    pthread_attr_t attr;
-
-    // Create client sockets to neighbors of the node
+ // Create client sockets to neighbors of the node
     int j = 0;
     for (j = 0; j < nb_neighbors; j++) {
         // Create TCP socket
@@ -230,10 +235,9 @@ int main(int argc, char* argv[])
         pthread_create(&pid, &attr, detect_termination, NULL);
     }
 
-    long last_sent_time = 0;
+    int last_sent_time = 0;
+    int last_sent_time_s = 0;
     int total_length;
-    char msg[200];
-    
     while (1)
     {
         if (node_state == Active)
@@ -242,14 +246,17 @@ int main(int argc, char* argv[])
             {
                 struct timespec current_time;
                 clock_gettime(CLOCK_REALTIME, &current_time);
-                if (min_send_delay < current_time.tv_nsec/1000000 - last_sent_time);
+                 
+                    // Not totally correct but will do for now
+                if ((current_time.tv_sec - last_sent_time_s > min_send_delay/1000)  ||  (min_send_delay < current_time.tv_nsec/1000000 - last_sent_time);
                 {
                     // Source | Dest | Protocol | Length | Payload                    
                     Neighbor neighborToSend = neighbors[(rand() % nb_neighbors)];
                     total_length = 5 + determine_msg_length(timestamp);
                     snprintf(msg, total_length, "%d%dA%s", node_id, neighborToSend.id, create_vector_msg(timestamp));
                     send_msg(neighborToSend.server_socket, msg, 4);
-                    last_sent_time = current_time.tv_nsec/100000;
+                    last_sent_time_ns = current_time.tv_nsec/100000;
+                    last_sent_time_s = current_time.tv_sec;
                     msgs_to_send--;
                     timestamp[this_index]++;                    
                 }
@@ -293,8 +300,12 @@ void* handle_neighbor(void* arg)
     }
 }
 
+//Src dst prot payload ->
+//|##|##|Char|###|###|###|...|###| (Pipes not included in actual messages)
 void parse_buffer(char* buffer, size_t* rcv_len)
 {
+    // Need to modify this for new message format 
+
     // Check if we have enough byte to read message length
     while (*rcv_len > 4 ) {
         size_t message_len = buffer[3];
@@ -318,7 +329,7 @@ void parse_buffer(char* buffer, size_t* rcv_len)
 // Source | Dest | Protocol | Length | Payload
 int handle_message(char* message, size_t length)
 {
-    if (message[2] == APP_MSG)
+    if (message_type(message) == APP_MSG)
     {
         if (node_state == Passive)
         {
@@ -330,7 +341,7 @@ int handle_message(char* message, size_t length)
         receive_message(message, (int)length);
         snapshot_channel(message);
     }
-    else if (message[2] == MARKER_MSG)
+    else if (message_type(message) == MARKER_MSG)
     {
         record_snapshot(message);
     }
@@ -341,9 +352,12 @@ int handle_message(char* message, size_t length)
 void send_marker_messages(int sent_by, int snapshot_id) 
 {
     int i;
-    char msg[5];
+    char msg[200];
+        // src  dst prot     vector     \0
+    length = 2 + 2 + 1 + nb_nodes * 3 + 1; 
     for (i = 0; i < nb_neighbors; i++)
     {
+        
         if (neighbors[i].id != sent_by) // Don't send marker msg to sender
         {
             snprintf(msg, 5, "%d%dM1%d", node_id, neighbors[i].id, snapshot_id);
@@ -447,7 +461,7 @@ int determine_msg_length(int * vector_clk)
 // Takes the message and determines whether it should be delivered or not
 int receive_message(char * message, int length)
 {
-    int * received_clk = parse_vector(message + 4);
+    int * received_clk = parse_vector(message_payload(message));
 
     int deliver = compare_timestamps(received_clk);
 
@@ -461,6 +475,7 @@ int receive_message(char * message, int length)
 }
 
 // returns 1 when incoming <= own, 0 when not
+// this may not be right...i'm getting confused with the message passing algorithm and the snapshot algorithm
 int compare_timestamps(int * incoming_ts)
 {
     int i;
@@ -480,6 +495,7 @@ void deliver_message(char * message, int length)
     int source = message[0] - '0';
     int source_index = find(source, system_config.nodeIDs, nb_nodes);
 
+    merge_timestamps(parse_vector(message_payload(message)));
     timestamp[source_index]++;
     
 }
@@ -501,7 +517,7 @@ void check_buffered_messages()
     int i;
     for(i = 0; i < buffer_length; i++)
     {
-        buffered_vector = parse_vector(msg_buffer[i] + 4);
+        buffered_vector = parse_vector(message_payload(msg_buffer[i]));
         if (compare_timestamps(buffered_vector))
         {
             deliver_message(msg_buffer[i], buffer_msg_length[i]);
@@ -522,25 +538,20 @@ void remove_from_buffer(int index)
 }
 
 //given a vector clock, create message payload in the form of "C0-C1-C2 - ... - CN"  Each element corresponds to the clock at the node at the index (C0 = index 0)
-// TODO: Can't handle vectors with elements greater than 100
 char * create_vector_msg(int * vector_clk)
 {
-    int length = determine_msg_length(vector_clk);
-    char vector_msg[200]; 
+    int length = nb_nodes * 3;
+    char * vector_msg = (char*)malloc(length * sizeof(char) + 1); 
     int i = 0, node_counter = 0;
     while (i < length && node_counter < nb_nodes)
     {
-        sprintf(vector_msg + i, "%d", vector_clk[node_counter]);
-        i++; 
-        if (vector_clk[node_counter] > 9)
-        {
-            i++;
-        }
-        vector_msg[i] = '-';
-        i++;
+        sprintf(vector_msg + i, "%03d", vector_clk[node_counter]);
+        i+=3;
         node_counter++;
     }
     vector_msg[i] = '\0';
+    //printf("%s\n", vector_msg);
+    return vector_msg;
 }
 
 // Given a vector from a message, turn into an int array
@@ -548,14 +559,47 @@ int * parse_vector(char * char_vector) // Input vector in format C0-C1-C2 - ... 
 {
     int * vector_clock = (int *)malloc(nb_nodes*sizeof(int));
 
-    int i, offset, clock;
+    int i, clock; 
     char charInput;
-    for (i = 0, offset=0; i < nb_nodes; i++)
+    for (i = 0; i < nb_nodes; i++)
     {
-        sscanf(char_vector, "%d%c%n", &clock, &charInput, &offset);
-        char_vector += offset;
+        sscanf(char_vector, "%3d", &clock);
+        char_vector += 3;
         vector_clock[i] = clock;
     }
     return vector_clock;
 }
 
+int merge_timestamps(int * incoming_ts)
+{
+    int i ;
+    for (i = 0; i < nb_nodes; i++)
+    {
+        timestamp[i] = timestamp[i] > incoming_ts[i] ? timestamp[i] : incoming_ts[i]; // take the larger
+    }
+}
+
+// Message accessor functions, for easy reading
+int message_source(char * msg)
+{
+    int source;
+    sscanf(msg, "%2d", &source);
+    return source; 
+}
+
+int message_dst(char * msg)
+{
+    int dest;
+    sscanf(msg+2, "%2d", &dest);
+    return dest; 
+}
+
+char message_type(char * msg)
+{
+    return msg[4];
+}
+
+char * message_payload(char * msg)
+{
+    return msg+5;
+}
