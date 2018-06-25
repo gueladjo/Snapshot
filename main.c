@@ -21,17 +21,35 @@ typedef struct Neighbor {
     int port;
     char hostname[100];
     int server_socket; // I'm not sure if this is the right terminology to call this the 'server' socket, but it's the new socket created from the accept() call
-    int client_socket
+    int client_socket;
 } Neighbor;
 
+enum Color {Blue = 0, Red = 1};
+enum Channel {Empty = 0, NotEmpty = 1};
 enum State {Passive = 0, Active = 1};
+enum Marker {Received = 0, NotReceived = 1};
+
+typedef struct Snapshot {
+    enum Color color;
+    enum State state;
+    int* timestamp;
+    enum Channel channel;
+    enum Marker* neighbors;
+    int nb_marker;
+} Snapshot;
+
+Snapshot* snapshot;
+
+int nb_snapshots;
 
 void* handle_neighbor(void* arg);
 void parse_buffer(char* buffer, size_t* rcv_len);
 int handle_message(char* message, size_t length);
-void send_marker_messages(int sent_by) ;
+
 char * create_vector_msg(int * vector_clk);
 int * parse_vector(char * char_vector);
+void send_marker_messages(int sent_by, int snapshot_id) ;
+
 void send_msg(int sockfd, char * buffer, int msglen);
 int receive_message(char * message, int length);
 int compare_timestamps(int * incoming_ts);
@@ -48,6 +66,7 @@ char * message_payload(char * msg);
 
 void record_snapshot();
 void activate_node();
+void* detect_termination();
 
 // Global parameters
 int nb_nodes;
@@ -99,6 +118,7 @@ int main(int argc, char* argv[])
     nb_neighbors = system_config.neighborCount[this_index];
     // Set up neighbors information and initialize vector timestamp
     neighbors =  malloc(nb_neighbors * sizeof(Neighbor));
+    snapshot =  malloc(100 * sizeof(Snapshot));
     timestamp = malloc(nb_nodes * sizeof(int));
     memset(timestamp, 0, nb_nodes * sizeof(int));
 
@@ -203,11 +223,18 @@ int main(int argc, char* argv[])
             printf("Error on accept call.\n");
             exit(1);
         }
-        pthread_create(&tid, &attr, handle_neighbor, neighbors[i].server_socket);
+        pthread_create(&tid, &attr, handle_neighbor, &(neighbors[i].server_socket));
         i++;
     }
 
-    long last_sent_time_s = 0, last_sent_time_ns = 0
+    // Create termination detection thread if node id is 0
+    if (node_id == 0) {
+        pthread_t pid;
+        pthread_create(&pid, &attr, detect_termination, NULL);
+    }
+
+    int last_sent_time = 0;
+    int last_sent_time_s = 0;
     int total_length;
     while (1)
     {
@@ -313,14 +340,24 @@ int handle_message(char* message, size_t length)
     }
     else if (message_type(message) == MARKER_MSG)
     {
+<<<<<<< HEAD
         record_snapshot();
         send_marker_messages(message_source(message)));
+=======
+        record_snapshot(message);
+>>>>>>> cd6d9cc0f2eb19198f59f9fea027cd423b6a3833
     }
 }
 
+
 // Needs to be changed from broadcast to tree 
+<<<<<<< HEAD
 void send_marker_messages(int sent_by) 
 {    
+=======
+void send_marker_messages(int sent_by, int snapshot_id) 
+{
+>>>>>>> cd6d9cc0f2eb19198f59f9fea027cd423b6a3833
     int i;
     char msg[200];
         // src  dst prot     vector     \0
@@ -330,10 +367,15 @@ void send_marker_messages(int sent_by)
         
         if (neighbors[i].id != sent_by) // Don't send marker msg to sender
         {
+<<<<<<< HEAD
                             // Still needs to be filled in with snapshot payload
             snprintf(msg, length, "%02d%02dM000", node_id, neighbors[i].id);
             //send_msg(neighbors[i].client_socket, msg, 8);
             printf("%s\n", msg);
+=======
+            snprintf(msg, 5, "%d%dM1%d", node_id, neighbors[i].id, snapshot_id);
+            send_msg(neighbors[i].client_socket, msg, 4);
+>>>>>>> cd6d9cc0f2eb19198f59f9fea027cd423b6a3833
         }
     }
 }
@@ -347,7 +389,6 @@ void send_msg(int sockfd, char * buffer, int msglen)
         bytes_to_send -= send(sockfd, buffer + (msglen - bytes_to_send), msglen, 0);
     }
 }
-
 
 void activate_node()
 {
@@ -468,6 +509,7 @@ int * parse_vector(char * char_vector) // Input vector in format C0-C1-C2 - ... 
     return vector_clock;
 }
 
+<<<<<<< HEAD
 int merge_timestamps(int * incoming_ts)
 {
     int i ;
@@ -504,6 +546,52 @@ char * message_payload(char * msg)
 }
 
 void record_snapshot()
+=======
+void record_snapshot(char* message)
+>>>>>>> cd6d9cc0f2eb19198f59f9fea027cd423b6a3833
 {
+    char sent_by = message[0];
+    // Format up to change
+    char snapshot_id = message[4];
 
+    // If this is the first marker received, record state and send marker messages
+    if (snapshot[snapshot_id].color == Blue) {
+        snapshot[snapshot_id].state = node_state;
+        memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(timestamp));
+        snapshot[snapshot_id].color = Red;
+        send_marker_messages(node_id, atoi(&snapshot_id));
+    }
+
+    else {
+        // Marker message by neighbor received: stop recording channel for this neighbor
+        snapshot[snapshot_id].neighbors[atoi(&sent_by)] = Received;  
+        snapshot[snapshot_id].nb_marker = snapshot[snapshot_id].nb_marker + 1;   
+
+        // Detect if snapshot is ready to be sent to node 0
+        if (nb_neighbors == snapshot[snapshot_id].nb_marker) {
+            // Converge cast state (vector clock timestamp + node state + channel state) to node 0
+        }
+    }
+}
+
+void* detect_termination()
+{
+    long last_snapshot = 0;
+    int snapshot_id = 0;
+
+    // Need to fix clock
+    while(1) {
+        struct timespec current_time;
+        clock_gettime(CLOCK_REALTIME, &current_time);
+        if (snapshot_delay < current_time.tv_nsec/1000000 - last_snapshot) {
+            last_snapshot = current_time.tv_nsec/1000000;
+            
+            // Record node 0 state and mark it as "red"
+            snapshot[snapshot_id].state = node_state;
+            memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(timestamp));
+            snapshot[snapshot_id].color = Red;
+            send_marker_messages(node_id, snapshot_id);
+            snapshot_id++;
+        }
+    }
 }
