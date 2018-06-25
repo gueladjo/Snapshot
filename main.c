@@ -340,24 +340,14 @@ int handle_message(char* message, size_t length)
     }
     else if (message_type(message) == MARKER_MSG)
     {
-<<<<<<< HEAD
-        record_snapshot();
-        send_marker_messages(message_source(message)));
-=======
         record_snapshot(message);
->>>>>>> cd6d9cc0f2eb19198f59f9fea027cd423b6a3833
     }
 }
 
 
 // Needs to be changed from broadcast to tree 
-<<<<<<< HEAD
-void send_marker_messages(int sent_by) 
-{    
-=======
 void send_marker_messages(int sent_by, int snapshot_id) 
 {
->>>>>>> cd6d9cc0f2eb19198f59f9fea027cd423b6a3833
     int i;
     char msg[200];
         // src  dst prot     vector     \0
@@ -367,15 +357,8 @@ void send_marker_messages(int sent_by, int snapshot_id)
         
         if (neighbors[i].id != sent_by) // Don't send marker msg to sender
         {
-<<<<<<< HEAD
-                            // Still needs to be filled in with snapshot payload
-            snprintf(msg, length, "%02d%02dM000", node_id, neighbors[i].id);
-            //send_msg(neighbors[i].client_socket, msg, 8);
-            printf("%s\n", msg);
-=======
             snprintf(msg, 5, "%d%dM1%d", node_id, neighbors[i].id, snapshot_id);
             send_msg(neighbors[i].client_socket, msg, 4);
->>>>>>> cd6d9cc0f2eb19198f59f9fea027cd423b6a3833
         }
     }
 }
@@ -509,7 +492,6 @@ int * parse_vector(char * char_vector) // Input vector in format C0-C1-C2 - ... 
     return vector_clock;
 }
 
-<<<<<<< HEAD
 int merge_timestamps(int * incoming_ts)
 {
     int i ;
@@ -545,10 +527,7 @@ char * message_payload(char * msg)
     return msg+5;
 }
 
-void record_snapshot()
-=======
 void record_snapshot(char* message)
->>>>>>> cd6d9cc0f2eb19198f59f9fea027cd423b6a3833
 {
     char sent_by = message[0];
     // Format up to change
