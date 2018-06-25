@@ -41,6 +41,7 @@ typedef struct Snapshot {
 Snapshot* snapshot;
 
 int nb_snapshots;
+int last_snapshot_id;
 
 void* handle_neighbor(void* arg);
 void parse_buffer(char* buffer, size_t* rcv_len);
@@ -59,6 +60,7 @@ void check_buffered_messages();
 void remove_from_buffer(int index);
 
 void record_snapshot();
+void snapshot_channel(char* message);
 void activate_node();
 void* detect_termination();
 
@@ -326,6 +328,7 @@ int handle_message(char* message, size_t length)
             }
         }
         receive_message(message, (int)length);
+        snapshot_channel(message);
     }
     else if (message[2] == MARKER_MSG)
     {
@@ -363,6 +366,64 @@ void activate_node()
 {
     msgs_to_send = (rand() % (max_per_active + 1 - min_per_active)) + min_per_active; // Between max and min per active
     node_state = Active;
+}
+
+void record_snapshot(char* message)
+{
+    char sent_by = message[0];
+    // Format up to change
+    int snapshot_id = atoi(&message[4]);
+
+    // If this is the first marker received, record state and send marker messages
+    if (snapshot[snapshot_id].color == Blue) {
+        last_snapshot_id = snapshot_id;
+        snapshot[snapshot_id].state = node_state;
+        memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(timestamp));
+        snapshot[snapshot_id].color = Red;
+        send_marker_messages(node_id, atoi(&snapshot_id));
+    }
+
+    else {
+        // Marker message by neighbor received: stop recording channel for this neighbor
+        snapshot[snapshot_id].neighbors[atoi(&sent_by)] = Received;  
+        snapshot[snapshot_id].nb_marker = snapshot[snapshot_id].nb_marker + 1;   
+
+        // Detect if snapshot is ready to be sent to node 0
+        if (nb_neighbors == snapshot[snapshot_id].nb_marker) {
+            // Converge cast state (vector clock timestamp + node state + channel state) to node 0
+        }
+    }
+}
+
+// Check if message should be included in channel state of snapshot
+void snapshot_channel(char* message)
+{
+    char sent_by = message[0];
+    if (snapshot[last_snapshot_id].neighbors[atoi(&sent_by)] == NotReceived) {
+        snapshot[last_snapshot_id].channel = NotEmpty;
+    }    
+}
+
+void* detect_termination()
+{
+    long last_snapshot = 0;
+    int snapshot_id = 0;
+
+    // Need to fix clock
+    while(1) {
+        struct timespec current_time;
+        clock_gettime(CLOCK_REALTIME, &current_time);
+        if (snapshot_delay < current_time.tv_nsec/1000000 - last_snapshot) {
+            last_snapshot = current_time.tv_nsec/1000000;
+            
+            // Record node 0 state and mark it as "red"
+            snapshot[snapshot_id].state = node_state;
+            memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(timestamp));
+            snapshot[snapshot_id].color = Red;
+            send_marker_messages(node_id, snapshot_id);
+            snapshot_id++;
+        }
+    }
 }
 
 // given a vector clock, how large is the message
@@ -498,50 +559,3 @@ int * parse_vector(char * char_vector) // Input vector in format C0-C1-C2 - ... 
     return vector_clock;
 }
 
-void record_snapshot(char* message)
-{
-    char sent_by = message[0];
-    // Format up to change
-    char snapshot_id = message[4];
-
-    // If this is the first marker received, record state and send marker messages
-    if (snapshot[snapshot_id].color == Blue) {
-        snapshot[snapshot_id].state = node_state;
-        memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(timestamp));
-        snapshot[snapshot_id].color = Red;
-        send_marker_messages(node_id, atoi(&snapshot_id));
-    }
-
-    else {
-        // Marker message by neighbor received: stop recording channel for this neighbor
-        snapshot[snapshot_id].neighbors[atoi(&sent_by)] = Received;  
-        snapshot[snapshot_id].nb_marker = snapshot[snapshot_id].nb_marker + 1;   
-
-        // Detect if snapshot is ready to be sent to node 0
-        if (nb_neighbors == snapshot[snapshot_id].nb_marker) {
-            // Converge cast state (vector clock timestamp + node state + channel state) to node 0
-        }
-    }
-}
-
-void* detect_termination()
-{
-    long last_snapshot = 0;
-    int snapshot_id = 0;
-
-    // Need to fix clock
-    while(1) {
-        struct timespec current_time;
-        clock_gettime(CLOCK_REALTIME, &current_time);
-        if (snapshot_delay < current_time.tv_nsec/1000000 - last_snapshot) {
-            last_snapshot = current_time.tv_nsec/1000000;
-            
-            // Record node 0 state and mark it as "red"
-            snapshot[snapshot_id].state = node_state;
-            memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(timestamp));
-            snapshot[snapshot_id].color = Red;
-            send_marker_messages(node_id, snapshot_id);
-            snapshot_id++;
-        }
-    }
-}
