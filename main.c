@@ -44,7 +44,6 @@ Snapshot* snapshot;
 Snapshot** snapshots;
 int* number_received;
 
-int nb_snapshots;
 int last_snapshot_id = -1;
 
 void* handle_neighbor(void* arg);
@@ -190,7 +189,7 @@ int main(int argc, char* argv[])
         node_state = Passive;
     }
 
-    // Client sockets information
+   // Client sockets information
     struct hostent* h;
 
     // Server Socket information
@@ -201,7 +200,7 @@ int main(int argc, char* argv[])
     pthread_t tid;
     pthread_attr_t attr;
 
-// Create TCP server socket
+    // Create TCP server socket
     if ((s = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         printf("Error creating socket\n");
         exit(1);
@@ -212,6 +211,12 @@ int main(int argc, char* argv[])
     sin.sin_family = AF_INET;
     sin.sin_addr.s_addr = INADDR_ANY;
     sin.sin_port = htons(port);
+
+    // Fill in socket address structure with host info
+    memset(&pin, 0, sizeof(pin));
+    pin.sin_family = AF_INET;
+    pin.sin_addr.s_addr = ((struct in_addr *)(h->h_addr))->s_addr;
+    pin.sin_port = htons(neighbors[j].port);
 
     // Bind socket to address and port number
     if (bind(s, (struct sockaddr*) &sin, sizeof(sin)) == -1) {
@@ -229,41 +234,6 @@ int main(int argc, char* argv[])
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     addrlen = sizeof(pin);
-
-
-    //  Create client sockets to neighbors of the node
-    int j = 0;
-    for (j = 0; j < nb_neighbors; j++) {
-        // Create TCP socket
-        if ((neighbors[j].send_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-            printf("Error creating socket\n");
-            exit(1); 
-        }
-
-        // Get host info
-        int fail_count = 0;    
-        while ((h = gethostbyname(neighbors[j].hostname)) == 0) 
-        {
-            printf("Error on gethostbyname\n");
-            fail_count++;
-            if (fail_count > 10)
-                exit(1);
-            else
-                sleep(1);
-        }
-
-        // Fill in socket address structure with host info
-        memset(&pin, 0, sizeof(pin));
-        pin.sin_family = AF_INET;
-        pin.sin_addr.s_addr = ((struct in_addr *)(h->h_addr))->s_addr;
-        pin.sin_port = htons(neighbors[j].port);
-
-        // Connect to port on neighbor
-        if (connect(neighbors[j].send_socket, (struct sockaddr *) &pin, sizeof(pin)) == -1) {
-            printf("Error when connecting to neighbor\n");
-            exit(1);
-        }
-    }
 
     i = 0;
     while (i < nb_neighbors) {
@@ -289,12 +259,6 @@ int main(int argc, char* argv[])
             printf("Error on gethostbyname\n");
             exit(1);
         }
-
-        // Fill in socket address structure with host info
-        memset(&pin, 0, sizeof(pin));
-        pin.sin_family = AF_INET;
-        pin.sin_addr.s_addr = ((struct in_addr *)(h->h_addr))->s_addr;
-        pin.sin_port = htons(neighbors[j].port);
 
         // Connect to port on neighbor
         int connect_return = connect(neighbors[j].send_socket, (struct sockaddr *) &pin, sizeof(pin));
