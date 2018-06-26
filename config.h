@@ -16,7 +16,7 @@ typedef struct config {
     int ** neighbors;
 } config, *config_ptr;
 
-int* read_config_file(config *);
+int* read_config_file(config *, char*);
 void display_config(config);
 void free_config(config);
 int ** create_spanning_tree(int ** out_tree_neighbors, int **,  int* nodeIDs, int** nodeNeighbors, int * nodeNeighborCount, int numNodes);
