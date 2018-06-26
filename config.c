@@ -5,6 +5,7 @@
 
 int* read_config_file(config * system, char* fileName)
 {    
+    system->config_name = fileName;
     FILE * fp = fopen(fileName, "r");
 
     int tokensRead = 0;

@@ -9,6 +9,7 @@ typedef struct config {
     int snapshot_delay;
     int max_number;
     // 5 parallel arrays for node information   
+    char * config_name;
     int * nodeIDs; 
     char ** hostNames; 
     int * portNumbers;

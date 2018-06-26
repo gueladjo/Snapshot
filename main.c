@@ -69,6 +69,7 @@ void record_snapshot();
 void snapshot_channel(char* message);
 void activate_node();
 void* snapshot_handler();
+void output();
 
 // Global parameters
 int nb_nodes;
@@ -421,12 +422,12 @@ int handle_message(char* message, size_t length)
             if (number_received[snapshot_id] == node_id) {
                 int i, k, max;
                 
-                int termination_detected = 0;
+                int termination_detected = 1;
                 for (i = 0; i < nb_nodes; i++) {
                     if (snapshots[snapshot_id][i].state == Active)
-                        termination_detected = 1;
+                        termination_detected = 0;
                     if (snapshots[snapshot_id][i].channel == NotEmpty) 
-                        termination_detected = 1;
+                        termination_detected = 0;
                 }
 
                 int consistent = 1;
@@ -440,7 +441,15 @@ int handle_message(char* message, size_t length)
                     }
                 } 
                     
-                if (termination_detected) {
+                if (termination_detected) 
+                {
+                    char msg[10];
+                    for (i = 0; i < nb_neighbors; i++)
+                    {
+                        snprintf(msg, 6, "%02d%02dH", node_id, neighbors[i].id);
+                        send_msg(neighbors[i].send_socket, msg, 5);
+                    }
+                    output();
                     // send halt msg to all neighbors then exit
                 }
 
@@ -457,6 +466,8 @@ int handle_message(char* message, size_t length)
                 send_msg(neighbors[i].send_socket, message, (int) length);
             }
         }
+        if (node_id) // output to file if not node 0, node 0 already outputs elsewhere and this prevents double
+            output();
         exit(0);
     }
 }
@@ -551,7 +562,7 @@ void* snapshot_handler()
     while(1) {
         struct timespec current_time;
         clock_gettime(CLOCK_REALTIME, &current_time);
-        delta_ms = (current_time.tv_sec - previous_time.tv_sec) * 1000 + (current_time.tv_nsec - previous_time.                 tv_nsec) / 1000000;
+        delta_ms = (current_time.tv_sec - previous_time.tv_sec) * 1000 + (current_time.tv_nsec - previous_time.tv_nsec) / 1000000;
 
         if (delta_ms > snapshot_delay) {
             // Record node 0 state and mark it as "red"
@@ -656,4 +667,29 @@ char message_type(char * msg)
 char * message_payload(char * msg)
 {
     return msg+5;
+}
+
+void output()
+{
+    int txtlength = strlen(system_config.config_name);
+    int outlength = strlen(system_config.config_name) + 5;
+    char * partial = malloc(txtlength-4);
+    char * file = malloc(outlength);
+    memmove(partial, txtlength, txtlength-4);
+
+    snprintf(file, outlength, "%s-%d.out", partial, node_id);
+    FILE * fp = fopen(file, "w");
+    int snapshot_counter;
+    int vector_counter;
+    for (snapshot_counter = 0; snapshot_counter < last_snapshot_id; snapshot_counter++)
+    {
+        for (vector_counter = 0; vector_counter < nb_nodes; vector_counter++)
+        {
+            fprintf(fp, "%d ", snapshot[snapshot_counter].timestamp[vector_counter]);
+        }
+    }
+    fclose(fp);
+    free (partial);
+    free (file);
+
 }
