@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 ***** Message format *****
 
 _ Source ID : 1 byte
@@ -9,7 +7,6 @@ _ Length : 1 byte
 _ Payload : vector clock for application messages
 Format of payload: "C0-C1-C2- ... -CN"?
 
->>>>>>> 9dba2fc5cfb774e9a6d6b926f2b27ea7f32cab92
 ***** PARSING INFORMATION *****
 
 
