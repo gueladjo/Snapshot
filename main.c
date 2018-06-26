@@ -700,7 +700,7 @@ void output()
     int outlength = strlen(system_config.config_name) + 5;
     char * partial = malloc(txtlength-4);
     char * file = malloc(outlength);
-    memmove(partial, txtlength, txtlength-4);
+    memmove(partial, system_config.config_name, txtlength-4);
 
     snprintf(file, outlength, "%s-%d.out", partial, node_id);
     FILE * fp = fopen(file, "w");
