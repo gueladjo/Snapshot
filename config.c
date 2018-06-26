@@ -1,6 +1,7 @@
+#include "config.h"
 #include<stdio.h>
 #include<stdlib.h>
-#include"config.h"
+#include<string.h>
 
 int* read_config_file(config * system)
 {    
@@ -10,10 +11,10 @@ int* read_config_file(config * system)
     int tokensRead = 0;
     int tokensInLine = 6; // First valid line has 6 tokens
     int linesRead = 0;
+
     if (fp)
     {
         int system_info[6];
-        
         while (tokensRead < tokensInLine) // First Line
         {
             int input;
@@ -69,8 +70,7 @@ int* read_config_file(config * system)
         tokensInLine = 3; // nodeID hostName listenPort
         linesRead = 0;
 
-        // Begin second part TODO: stop at comments (#)
-        while (linesRead < system->nodes_in_system) // nodes_in_system = nodes in system
+        while (linesRead < system->nodes_in_system) 
         {            
             tokensRead = 0;
             while (tokensRead < tokensInLine)
@@ -130,7 +130,7 @@ int* read_config_file(config * system)
         int tempIndex = 0;
 
         // Third Part
-        // Question: Are we guaranteed a space delimited list?
+
         int * tempArray = (int*)malloc((system->nodes_in_system - 1)* sizeof(int)); //max possible neighbors 
         
         while (linesRead < system->nodes_in_system && !feof(fp))
@@ -138,59 +138,75 @@ int* read_config_file(config * system)
             char charInput = '\0';
             int input;
             int matched;
-            int neighborIndex;            
+            int neighborIndex;     
+
+
+            charInput = fgetc(fp);
             
-            matched = fscanf(fp, "%d", &input);
-
-            if (matched)
-            {               
-                tempArray[tempIndex] = input;
-                tempIndex++;
-            }
-            else
+            if (charInput != ' ' && charInput != '#' && charInput != '\n')
             {
-                while(charInput != '\n' && !feof(fp))
+                if (charInput <= 57 && charInput >= 48)
                 {
+                    char tensPlace = charInput;
+                    char onesPlace;
                     charInput = fgetc(fp);
+                    if (charInput <= 57 && charInput >= 48)
+                    {
+                        onesPlace = charInput;
+                        input = atoi(&tensPlace)*10 + atoi(&onesPlace);
+                        
+                    }
+                    else 
+                    {
+                        input = atoi(&tensPlace);
+                        tempArray[tempIndex] = input;
+                        tempIndex++;
+                        if (charInput == '\n' ||charInput == '#' || feof(fp))
+                        {
+                            if (tempIndex >0)
+                            {
+                            system->neighbors[linesRead] = (int*)malloc((tempIndex+1) * sizeof(int));
+                                
+                                for (neighborIndex = 0; neighborIndex < tempIndex; neighborIndex++) // tempIndex = neighborCount for node at lineRead (first line = fisrt node)
+                                {
+                                    system->neighbors[linesRead][neighborIndex] = tempArray[neighborIndex];
+                                }
+                                system->neighborCount[linesRead] = tempIndex;
+                                tempIndex = 0;
+                                linesRead++;
+                            }
+                            if (charInput == '#')
+                            {
+                                while (charInput != '\n' )
+                                {
+                                    charInput = fgetc(fp);
+                                }
+                            }
+                        }
+                    }
                 }
-
-
-                system->neighbors[linesRead] = (int*)malloc((tempIndex+1) * sizeof(int));
+            }
+            else if (charInput == '\n' ||charInput == '#' || feof(fp))
+            {
                 if (tempIndex >0)
                 {
+                system->neighbors[linesRead] = (int*)malloc((tempIndex+1) * sizeof(int));
+                    
                     for (neighborIndex = 0; neighborIndex < tempIndex; neighborIndex++) // tempIndex = neighborCount for node at lineRead (first line = fisrt node)
                     {
                         system->neighbors[linesRead][neighborIndex] = tempArray[neighborIndex];
                     }
+                    system->neighborCount[linesRead] = tempIndex;
+                    tempIndex = 0;
+                    linesRead++;
                 }
-                system->neighborCount[linesRead] = tempIndex;
-                tempIndex = 0;
-                linesRead++;
-            }
-            
-            if (matched)
-            {
-                charInput = fgetc(fp);
+ 
                 if (charInput == '#')
                 {
-                    while(charInput != '\n' && !feof(fp))
+                    while (charInput != '\n')
                     {
                         charInput = fgetc(fp);
                     }
-
-
-                    system->neighbors[linesRead] = (int*)malloc((tempIndex+1) * sizeof(int));
-                    if (tempIndex >0)
-                    {
-                        for (neighborIndex = 0; neighborIndex < tempIndex; neighborIndex++) // tempIndex = neighborCount for node at lineRead (first line = fisrt node)
-                        {
-                            system->neighbors[linesRead][neighborIndex] = tempArray[neighborIndex];
-                        }
-     
-                        system->neighborCount[linesRead] = tempIndex;
-                        tempIndex = 0;
-                        linesRead++;         
-                    }     
                 }
             }
         }
@@ -263,4 +279,115 @@ void free_config(config system_config)
         free(system_config.neighbors[i]);
     }
     free(system_config.neighbors);
+}
+
+// Create Spanning tree returns an array that is parallel to nodeIDs
+// each element is another array that is the indices (of nodeID) that are spanning tree neighbors
+// Example: If nodeIDs are      2 4 1 6 10
+// and the spanning tree neighbors of node 2 are 4 and 1. 
+// then tree[0] would be [1 | 2]
+// That is, the neighbors of node at index 0 are index 1 and 2
+
+                            // Pass by reference, not a 2d array
+int ** create_spanning_tree(int ** out_tree_neighbor_count, int ** out_parents, int* node_ids, int** neighbor_at, int * num_neighbors_at, int num_nodes)
+{
+    int * visited = (int * )malloc(num_nodes * sizeof(int));
+    int ** tree = (int **)malloc(num_nodes * sizeof(int*));
+    int j;
+    for (j = 0; j < num_nodes; j++)
+    {
+        tree[j] = (int*)malloc(0);
+    }
+
+    *out_tree_neighbor_count = (int * )malloc(num_nodes *  sizeof(int));
+    *out_parents = (int * )malloc(num_nodes *  sizeof(int));
+    
+    int ** neighbor_index_at = convertToIndex(node_ids, neighbor_at,num_neighbors_at, num_nodes);
+    memset(visited, 0, num_nodes*sizeof(int));
+    memset(*out_tree_neighbor_count, 0, num_nodes*sizeof(int));
+    DFS(0, neighbor_index_at, num_neighbors_at, num_nodes, tree, *out_tree_neighbor_count, visited, *out_parents);
+
+    free (visited);
+    int i;
+    for (i = 0; i< num_nodes; i++)
+    {
+        free(neighbor_index_at[i]);
+    }
+    free (neighbor_index_at);
+    return tree;
+}
+
+int **  DFS(int current_index, int ** neighbor_indices, int * num_neighbors_at, int num_nodes, int ** tree, int * tree_neighbor_count, int * visited, int * parents)
+{
+    int i = 0;
+    visited[current_index] = 1;
+
+    while ( i < num_neighbors_at[current_index])
+    {      
+        if (!visited[neighbor_indices[current_index][i]])
+        {
+            // Set unvisited neighbor as tree neighbor
+            tree_neighbor_count[current_index]++;
+            tree[current_index] = (int*)realloc(tree[current_index], tree_neighbor_count[current_index] * sizeof(int));
+            tree[current_index][tree_neighbor_count[current_index] - 1] = neighbor_indices[current_index][i];
+
+            //Reverse: set neighbor's neighbor as self
+            tree_neighbor_count[neighbor_indices[current_index][i]]++;            
+            tree[neighbor_indices[current_index][i]]  = (int*)realloc(tree[neighbor_indices[current_index][i]], tree_neighbor_count[neighbor_indices[current_index][i]] * sizeof(int));
+            tree[neighbor_indices[current_index][i]][tree_neighbor_count[neighbor_indices[current_index][i]] - 1] = current_index;
+
+            // set neighbor's parent as self
+            parents[neighbor_indices[current_index][i]] = current_index;
+            // visit neighbor 
+            DFS(neighbor_indices[current_index][i], neighbor_indices, num_neighbors_at, num_nodes, tree, tree_neighbor_count, visited, parents);
+        }
+        else
+            i++;
+    }
+    return tree; 
+}
+
+
+// Converts neighbor_ids array into neighbor_indices array
+// Example: If nodeIDs are      2 4 1 6 10
+// and the neighbors of 2 (index 0) are 1, 6, and 10
+// (input) neighbor_ids[0] = [1 | 6 | 10]
+// (output) neighbor_indices[0] = [2 | 3 | 4]
+int ** convertToIndex(int * node_ids, int ** neighbor_ids, int * num_neighbors_at, int num_nodes)
+{
+
+    int ** nodeNeighborIndices = (int ** )malloc(num_nodes * sizeof(int*));
+    int i, j;
+    for (i = 0; i< num_nodes; i++)
+    {
+        nodeNeighborIndices[i] = (int*) malloc(num_neighbors_at[i] * sizeof(int));
+        for (j = 0; j < num_neighbors_at[j]; j++)
+        {
+            nodeNeighborIndices[i][j] = find(neighbor_ids[i][j], node_ids, num_nodes); 
+        }
+    }
+    return nodeNeighborIndices;
+
+}
+
+void printArray(int * array, int length)
+{
+    int i;
+    for (i = 0; i < length; i++)
+    {
+        printf("%d ", array[i]);
+    }
+    printf("\n");
+}
+
+// returns index of value in array
+int find(int value, int * array, int length)
+{
+    int i;
+    for (i = 0; i < length; i++)
+    {
+        if (array[i] == value)
+            return i;
+    }
+    return -1;
 }
