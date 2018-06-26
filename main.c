@@ -44,7 +44,6 @@ Snapshot* snapshot;
 Snapshot** snapshots;
 int* number_received;
 
-int nb_snapshots;
 int last_snapshot_id = -1;
 
 void* handle_neighbor(void* arg);
@@ -196,34 +195,6 @@ int main(int argc, char* argv[])
     pthread_t tid;
     pthread_attr_t attr;
 
-    // Create client sockets to neighbors of the node
-    int j = 0;
-    for (j = 0; j < nb_neighbors; j++) {
-        // Create TCP socket
-        if ((neighbors[j].send_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-            printf("Error creating socket\n");
-            exit(1); 
-        }
-
-        // Get host info
-        if ((h = gethostbyname(neighbors[j].hostname)) == 0) {
-            printf("Error on gethostbyname\n");
-            exit(1);
-        }
-
-        // Fill in socket address structure with host info
-        memset(&pin, 0, sizeof(pin));
-        pin.sin_family = AF_INET;
-        pin.sin_addr.s_addr = ((struct in_addr *)(h->h_addr))->s_addr;
-        pin.sin_port = htons(neighbors[j].port);
-
-        // Connect to port on neighbor
-        if (connect(neighbors[j].send_socket, (struct sockaddr *) &pin, sizeof(pin)) == -1) {
-            printf("Error when connecting to neighbor\n");
-            exit(1);
-        }
-    }
-
     // Create TCP server socket
     if ((s = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         printf("Error creating socket\n");
@@ -261,6 +232,35 @@ int main(int argc, char* argv[])
         }
         pthread_create(&tid, &attr, handle_neighbor, &(neighbors[i].receive_socket));
         i++;
+    }
+
+    // Create client sockets to neighbors of the node
+    int j = 0;
+    for (j = 0; j < nb_neighbors; j++) {
+        // Create TCP socket
+        if ((neighbors[j].send_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+            printf("Error creating socket\n");
+            exit(1); 
+        }
+
+        // Get host info
+        if ((h = gethostbyname(neighbors[j].hostname)) == 0) {
+            printf("Error on gethostbyname\n");
+            exit(1);
+        }
+
+        // Fill in socket address structure with host info
+        memset(&pin, 0, sizeof(pin));
+        pin.sin_family = AF_INET;
+        pin.sin_addr.s_addr = ((struct in_addr *)(h->h_addr))->s_addr;
+        pin.sin_port = htons(neighbors[j].port);
+
+        // Connect to port on neighbor
+        int connect_return = connect(neighbors[j].send_socket, (struct sockaddr *) &pin, sizeof(pin));
+        while (connect_return == -1) {
+            connect_return = connect(neighbors[j].send_socket, (struct sockaddr *) &pin, sizeof(pin));
+            printf("Node %d retrying to connect.\n", node_id);
+        }
     }
 
     // Create snapshot thread if node id is 0
@@ -450,9 +450,7 @@ int handle_message(char* message, size_t length)
                         send_msg(neighbors[i].send_socket, msg, 5);
                     }
                     output();
-                    // send halt msg to all neighbors then exit
                 }
-
             }
         }
     }
@@ -524,18 +522,62 @@ void record_snapshot(char* message)
         // Detect if snapshot is ready to be sent to node 0
         if (nb_neighbors == snapshot[snapshot_id].nb_marker) {
             // Converge cast state (vector clock timestamp + node state + channel state) to node 0
- 
-            int length = nb_nodes * 3 +  12;
-            int timestamp_length = nb_nodes * 3;
-            char* converge_msg = (char*)malloc(length * sizeof(char) + 3);
 
-            snprintf(converge_msg, length + 1, "%02d%02dC%02d%03d%c%c%s", node_id, parent[node_id]
-                   , node_id, snapshot_id, snapshot[snapshot_id].state, snapshot[snapshot_id].channel, create_vector_msg(timestamp));
-            int i = 0;
-            for (i = 0; i < nb_neighbors; i++) {
-                if (neighbors[i].id == parent[node_id]) {
-                    send_msg(neighbors[i].send_socket, converge_msg, length);
-                    break;
+            if (node_id == 0) {
+                snapshots[snapshot_id][0].state = snapshot[snapshot_id].state;
+                snapshots[snapshot_id][0].channel = snapshot[snapshot_id].channel;
+                snapshots[snapshot_id][0].timestamp = snapshot[snapshot_id].timestamp;
+
+                number_received[snapshot_id]++;
+
+                if (number_received[snapshot_id] == node_id) {
+                    int i, k, max;
+                    
+                    int termination_detected = 1;
+                    for (i = 0; i < nb_nodes; i++) {
+                        if (snapshots[snapshot_id][i].state == Active)
+                            termination_detected = 0;
+                        if (snapshots[snapshot_id][i].channel == NotEmpty) 
+                            termination_detected = 0;
+                    }
+
+                    int consistent = 1;
+                    for (i = 0; (i < nb_nodes) && consistent; i++) {
+                        max = snapshots[snapshot_id][i].timestamp[i]; 
+                        for (k = 0; (k < nb_nodes) && consistent; k++) {
+                            if (snapshots[snapshot_id][k].timestamp[i] >= max) {
+                                printf("INCONSISTENT SNAPSHOT\n");
+                                consistent = 0;
+                            } 
+                        }
+                    } 
+                        
+                    if (termination_detected) 
+                    {
+                        char msg[10];
+                        for (i = 0; i < nb_neighbors; i++)
+                        {
+                            snprintf(msg, 6, "%02d%02dH", node_id, neighbors[i].id);
+                            send_msg(neighbors[i].send_socket, msg, 5);
+                        }
+                        output();
+                    }
+                }
+            }
+
+            else {
+                int length = nb_nodes * 3 +  12;
+                int timestamp_length = nb_nodes * 3;
+                char* converge_msg = (char*)malloc(length * sizeof(char) + 3);
+
+                snprintf(converge_msg, length + 1, "%02d%02dC%02d%03d%c%c%s", node_id, parent[node_id]
+                       , node_id, snapshot_id, snapshot[snapshot_id].state, snapshot[snapshot_id].channel, create_vector_msg(timestamp));
+                int i = 0;
+                for (i = 0; i < nb_neighbors; i++) {
+                    if (neighbors[i].id == parent[node_id]) {
+                        send_msg(neighbors[i].send_socket, converge_msg, length);
+                        break;
+                    }
                 }
             }
         }
