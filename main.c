@@ -113,7 +113,7 @@ int main(int argc, char* argv[])
 
     this_index= find(node_id, system_config.nodeIDs, system_config.nodes_in_system);
     nb_neighbors = system_config.neighborCount[this_index];
-
+    port = system_config.portNumbers[node_id];
 
     // Set up neighbors information and initialize vector timestamp
     neighbors =  malloc(nb_neighbors * sizeof(Neighbor));
@@ -169,8 +169,10 @@ int main(int argc, char* argv[])
     // Server Socket information
     int s;
     struct sockaddr_in sin;
+    struct sockaddr_in sin2;
     struct sockaddr_in pin;
     int addrlen;
+
     pthread_t tid;
     pthread_attr_t attr;
 
@@ -184,6 +186,7 @@ int main(int argc, char* argv[])
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
     sin.sin_addr.s_addr = INADDR_ANY;
+    printf("PORT : %d\n", port);
     sin.sin_port = htons(port);
 
     // Bind socket to address and port number
@@ -224,18 +227,18 @@ int main(int argc, char* argv[])
         while (connect_return == -1) {
             connect_return = connect(neighbors[j].send_socket, (struct sockaddr *) &pin, sizeof(pin));
             printf("Node %d retrying to connect.\n", node_id);
+            sleep(1);
         }
     }
 
     // Create thread for receiving each neighbor messages
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    memset(&pin, 0, sizeof(pin));
-    addrlen = sizeof(pin);
+    addrlen = sizeof(sin2);
 
     i = 0;
     while (i < nb_neighbors) {
-        if ((neighbors[i].receive_socket = accept(s, (struct sockaddr *) &pin, (socklen_t*)&addrlen)) == -1) {
+        if ((neighbors[i].receive_socket = accept(s, (struct sockaddr *) &sin2, (socklen_t*)&addrlen)) == -1) {
             printf("Error on accept call.\n");
             exit(1);
         }
