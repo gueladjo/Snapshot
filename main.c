@@ -117,16 +117,10 @@ int main(int argc, char* argv[])
     // Set up neighbors information and initialize vector timestamp
     neighbors =  malloc(nb_neighbors * sizeof(Neighbor));
 
-<<<<<<< HEAD
-    snapshot =  malloc(100 * sizeof(Snapshot));
-    int i, k, j;
-    for (i = 0; i < 100; i++) {
-=======
     int dimension = 200;
     snapshot =  malloc(dimension * sizeof(Snapshot));
     int i, k;
     for (i = 0; i < dimension; i++) {
->>>>>>> pr/6
         snapshot[i].timestamp = malloc(nb_nodes * sizeof(int));
         snapshot[i].neighbors = malloc(nb_neighbors * sizeof(enum Marker));
 
@@ -151,23 +145,13 @@ int main(int argc, char* argv[])
 
     int *  tree_count; // num of elements in each of tree's arrays 
     int ** tree = create_spanning_tree(&tree_count, &parent, system_config.nodeIDs, system_config.neighbors, system_config.neighborCount, system_config.nodes_in_system);
-<<<<<<< HEAD
-    snapshot_neighbors = (Neighbor*)(malloc(sizeof(Neighbor)*tree_count[node_id]));
-    // allocate snapshot_neighbors array
-=======
 
     // allocate neighbors array
->>>>>>> pr/6
     for (i = 0; i < system_config.neighborCount[this_index]; i++)
     {
         neighbors[i].id = system_config.neighbors[this_index][i];
         neighbors[i].port = system_config.portNumbers[neighbors[i].id];
         memmove(neighbors[i].hostname, system_config.hostNames[neighbors[i].id], 18);
-<<<<<<< HEAD
-        
-        
-=======
->>>>>>> pr/6
     }
 
     // Set state of the node
