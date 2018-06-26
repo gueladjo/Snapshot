@@ -92,7 +92,6 @@ char * msg_buffer[MSG_BUFFER_SIZE];
 int buffer_msg_length[MSG_BUFFER_SIZE]; // length of each message in buffer;
 int buffer_length; // number of messages in buffer
 
-
 int msgs_sent; // Messages sent by this node, to be compared with max_number
 int msgs_to_send; // Messages to send on this active session (between min and maxperactive)
 Neighbor* neighbors;
@@ -120,12 +119,14 @@ int main(int argc, char* argv[])
     this_index= find(node_id, system_config.nodeIDs, system_config.nodes_in_system);
     nb_neighbors = system_config.neighborCount[this_index];
 
+
     // Set up neighbors information and initialize vector timestamp
     neighbors =  malloc(nb_neighbors * sizeof(Neighbor));
 
-    snapshot =  malloc(100 * sizeof(Snapshot));
+    int dimension = 200;
+    snapshot =  malloc(dimension * sizeof(Snapshot));
     int i, k;
-    for (i = 0; i < 100; i++) {
+    for (i = 0; i < dimension; i++) {
         snapshot[i].timestamp = malloc(nb_nodes * sizeof(int));
         snapshot[i].neighbors = malloc(nb_neighbors * sizeof(enum Marker));
 
@@ -141,7 +142,6 @@ int main(int argc, char* argv[])
     timestamp = malloc(nb_nodes * sizeof(int));
     memset(timestamp, 0, nb_nodes * sizeof(int));
     
-    int dimension = 100;
     number_received = malloc(dimension * sizeof(int));
     snapshots = malloc(dimension * sizeof(Snapshot*));
 
@@ -219,21 +219,6 @@ int main(int argc, char* argv[])
         exit(1);
     }
 
-    // Create thread for receiving each neighbor messages
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    addrlen = sizeof(pin);
-
-    i = 0;
-    while (i < nb_neighbors) {
-        if ((neighbors[i].receive_socket = accept(s, (struct sockaddr *) &pin, (socklen_t*)&addrlen)) == -1) {
-            printf("Error on accept call.\n");
-            exit(1);
-        }
-        pthread_create(&tid, &attr, handle_neighbor, &(neighbors[i].receive_socket));
-        i++;
-    }
-
     // Create client sockets to neighbors of the node
     int j = 0;
     for (j = 0; j < nb_neighbors; j++) {
@@ -261,6 +246,22 @@ int main(int argc, char* argv[])
             connect_return = connect(neighbors[j].send_socket, (struct sockaddr *) &pin, sizeof(pin));
             printf("Node %d retrying to connect.\n", node_id);
         }
+    }
+
+    // Create thread for receiving each neighbor messages
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    memset(&pin, 0, sizeof(pin));
+    addrlen = sizeof(pin);
+
+    i = 0;
+    while (i < nb_neighbors) {
+        if ((neighbors[i].receive_socket = accept(s, (struct sockaddr *) &pin, (socklen_t*)&addrlen)) == -1) {
+            printf("Error on accept call.\n");
+            exit(1);
+        }
+        pthread_create(&tid, &attr, handle_neighbor, &(neighbors[i].receive_socket));
+        i++;
     }
 
     // Create snapshot thread if node id is 0
@@ -588,9 +589,12 @@ void record_snapshot(char* message)
 void snapshot_channel(char* message)
 {
     int sent_by = message_source(message);
-    if (snapshot[last_snapshot_id].neighbors[sent_by] == NotReceived) {
-        snapshot[last_snapshot_id].channel = NotEmpty;
-    }    
+    int i = 0;
+    for (i = 0; i < (last_snapshot_id + 1); i++) {
+        if ((snapshot[i].nb_marker != nb_neighbors) || (snapshot[i].neighbors[sent_by] == NotReceived)) {
+            snapshot[i].channel = NotEmpty;
+        }    
+    }
 }
 
 void* snapshot_handler()
@@ -713,7 +717,7 @@ char * message_payload(char * msg)
 
 void output()
 {
-    int txtlength = strlen(system_config.config_name);
+/*    int txtlength = strlen(system_config.config_name);
     int outlength = strlen(system_config.config_name) + 5;
     char * partial = malloc(txtlength-4);
     char * file = malloc(outlength);
@@ -732,6 +736,6 @@ void output()
     }
     fclose(fp);
     free (partial);
-    free (file);
+    free (file); */
 
 }
