@@ -158,7 +158,8 @@ int main(int argc, char* argv[])
     {
         neighbors[i].id = system_config.neighbors[this_index][i];
         neighbors[i].port = system_config.portNumbers[neighbors[i].id];
-        neighbors[i].hostname = system_config.hostNames[neighbors[i].id];
+        memmove(neighbors[i].hostname, system_config.hostNames[neighbors[i].id], 18);
+        
         
     }
 
