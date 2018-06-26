@@ -671,24 +671,24 @@ char * message_payload(char * msg)
 
 void output()
 {
-    int txtlength = strlen(system_config.config_name));
-    int outlength = strlen(system_config.config_name) + 5);
+    int txtlength = strlen(system_config.config_name);
+    int outlength = strlen(system_config.config_name) + 5;
     char * partial = malloc(txtlength-4);
     char * file = malloc(outlength);
     memmove(partial, txtlength, txtlength-4);
 
-    snprintf(fileName, outlength, "%s-%d.out", partial, node_id);
-    FILE * fp = fopen(system_config.config_name, w);
+    snprintf(file, outlength, "%s-%d.out", partial, node_id);
+    FILE * fp = fopen(file, "w");
     int snapshot_counter;
     int vector_counter;
     for (snapshot_counter = 0; snapshot_counter < last_snapshot_id; snapshot_counter++)
     {
         for (vector_counter = 0; vector_counter < nb_nodes; vector_counter++)
         {
-            fprintf(fp, "%d ", snapshots[snapshot_counter].timestamp[vector_counter]);
+            fprintf(fp, "%d ", snapshot[snapshot_counter].timestamp[vector_counter]);
         }
     }
-    close(fp);
+    fclose(fp);
     free (partial);
     free (file);
 
