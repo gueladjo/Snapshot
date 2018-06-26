@@ -5,6 +5,7 @@
 
 int* read_config_file(config * system, char* fileName)
 {    
+    system->config_name = fileName;
     FILE * fp = fopen(fileName, "r");
 
     int tokensRead = 0;
@@ -389,8 +390,4 @@ int find(int value, int * array, int length)
             return i;
     }
     return -1;
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 9dba2fc5cfb774e9a6d6b926f2b27ea7f32cab92
