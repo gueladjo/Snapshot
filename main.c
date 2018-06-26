@@ -101,7 +101,6 @@ Neighbor* snapshot_neighbors; // Neighbors in the spanning tree
 
 int main(int argc, char* argv[])
 {
-    sleep(10);
     // Config struct filled when config file parsed
     srand(time(NULL));
 
@@ -124,7 +123,7 @@ int main(int argc, char* argv[])
     neighbors =  malloc(nb_neighbors * sizeof(Neighbor));
 
     snapshot =  malloc(100 * sizeof(Snapshot));
-    int i, k;
+    int i, k, j;
     for (i = 0; i < 100; i++) {
         snapshot[i].timestamp = malloc(nb_nodes * sizeof(int));
         snapshot[i].neighbors = malloc(nb_neighbors * sizeof(enum Marker));
@@ -246,7 +245,7 @@ int main(int argc, char* argv[])
     }
 
     // Create client sockets to neighbors of the node
-    int j = 0;
+    j = 0;
     for (j = 0; j < nb_neighbors; j++) {
         // Create TCP socket
         if ((neighbors[j].send_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
