@@ -88,15 +88,10 @@ int* timestamp;
 int* s_neighbor;
 int * parent;
 
-char * msg_buffer[MSG_BUFFER_SIZE];
-int buffer_msg_length[MSG_BUFFER_SIZE]; // length of each message in buffer;
-int buffer_length; // number of messages in buffer
-
 int msgs_sent; // Messages sent by this node, to be compared with max_number
 int msgs_to_send; // Messages to send on this active session (between min and maxperactive)
 Neighbor* neighbors;
 int nb_neighbors;
-Neighbor* snapshot_neighbors; // Neighbors in the spanning tree
 
 int main(int argc, char* argv[])
 {
@@ -151,30 +146,14 @@ int main(int argc, char* argv[])
 
     int *  tree_count; // num of elements in each of tree's arrays 
     int ** tree = create_spanning_tree(&tree_count, &parent, system_config.nodeIDs, system_config.neighbors, system_config.neighborCount, system_config.nodes_in_system);
-    // allocate snapshot_neighbors array
+
+    // allocate neighbors array
     for (i = 0; i < system_config.neighborCount[this_index]; i++)
     {
         neighbors[i].id = system_config.neighbors[this_index][i];
+        neighbors[i].port = system_config.portNumbers[neighbors[i].id];
+        memmove(neighbors[i].hostname, system_config.hostNames[neighbors[i].id], 18);
     }
-
-
-    for(i = 0; i < tree_count[this_index]; i++)
-    {
-        for (k = 0; k < nb_neighbors; k++)
-        {
-            if (neighbors[k].id == tree[this_index][i])
-            {
-                snapshot_neighbors[i] = neighbors[k];
-            }
-        }
-    }
-
-    // initialize message buffers
-    for (i = 0; i < MSG_BUFFER_SIZE; i++)
-    {
-        buffer_msg_length[i] = 0;
-    }
-    buffer_length = 0;
 
     // Set state of the node
     if ((node_id % 2) == 0) {
@@ -717,7 +696,7 @@ char * message_payload(char * msg)
 
 void output()
 {
-/*    int txtlength = strlen(system_config.config_name);
+    int txtlength = strlen(system_config.config_name);
     int outlength = strlen(system_config.config_name) + 5;
     char * partial = malloc(txtlength-4);
     char * file = malloc(outlength);
@@ -736,6 +715,5 @@ void output()
     }
     fclose(fp);
     free (partial);
-    free (file); */
-
+    free (file); 
 }

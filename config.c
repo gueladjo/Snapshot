@@ -60,7 +60,7 @@ int* read_config_file(config * system, char* fileName)
         int i;
         for (i = 0; i < system->nodes_in_system; i++)
         {
-           system->hostNames[i] = (char*)malloc(5 * sizeof(char));// 5 = length of string (dc##) + 1
+           system->hostNames[i] = (char*)malloc(18 * sizeof(char));// 18 = length of string (dc##.utdallas.edu) + 1
         }
         system->portNumbers = (int*)malloc(system->nodes_in_system * sizeof(int));
         system->neighborCount = (int*)malloc(system->nodes_in_system * sizeof(int)); 
@@ -102,7 +102,8 @@ int* read_config_file(config * system, char* fileName)
 
                 fscanf(fp, "%s", stringInput);
 
-                strcpy(system->hostNames[linesRead], stringInput); // Not sure why I'm getting a warning here?
+                //strcpy(system->hostNames[linesRead], stringInput); // Not sure why I'm getting a warning here?
+                snprintf(system->hostNames[linesRead], 18, "%s.utdallas.edu", stringInput);
                 tokensRead++;                                   
 
                 matched = fscanf(fp, "%d", &input);
