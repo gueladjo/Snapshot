@@ -109,7 +109,7 @@ int main(int argc, char* argv[])
     snapshot_delay = system_config.snapshot_delay;
     max_number = system_config.max_number;
 
-    sscanf(argv[1], "%i", &node_id);
+    sscanf(argv[1], "%d", &node_id);
 
     this_index= find(node_id, system_config.nodeIDs, system_config.nodes_in_system);
     nb_neighbors = system_config.neighborCount[this_index];
@@ -235,11 +235,12 @@ int main(int argc, char* argv[])
 
         // Connect to port on neighbor
         int connect_return = connect(neighbors[j].send_socket, (struct sockaddr *) &pin, sizeof(pin));
+        printf("Node %d retrying to connect.\n", node_id);
         while (connect_return == -1) {
             connect_return = connect(neighbors[j].send_socket, (struct sockaddr *) &pin, sizeof(pin));
-            printf("Node %d retrying to connect.\n", node_id);
             sleep(1);
         }
+        printf("Node %d connected to neighbor.\n", node_id);
     }
 
     // Create thread for receiving each neighbor messages
@@ -425,10 +426,11 @@ int handle_message(char* message, size_t length)
                 }
 
                 int consistent = 1;
+
                 for (i = 0; (i < nb_nodes) && consistent; i++) {
                     max = snapshots[snapshot_id][i].timestamp[i]; 
                     for (k = 0; (k < nb_nodes) && consistent; k++) {
-                        if (snapshots[snapshot_id][k].timestamp[i] >= max) {
+                        if (snapshots[snapshot_id][k].timestamp[i] > max) {
                             printf("INCONSISTENT SNAPSHOT\n");
                             consistent = 0;
                         } 
@@ -443,6 +445,7 @@ int handle_message(char* message, size_t length)
                         snprintf(msg, 6, "%02d%02dH", node_id, neighbors[i].id);
                         send_msg(neighbors[i].send_socket, msg, 5);
                     }
+
                     output();
                     exit(0);
                 }
@@ -500,81 +503,44 @@ void record_snapshot(char* message)
 {
     int sent_by = message_source(message);
     int snapshot_id;
-    sscanf(message_payload(message), "%i", &snapshot_id);
+    sscanf(message_payload(message), "%3d", &snapshot_id);
+
+    // Marker message by neighbor received: stop recording channel for this neighbor
+    snapshot[snapshot_id].neighbors[sent_by] = Received;  
+    snapshot[snapshot_id].nb_marker = snapshot[snapshot_id].nb_marker + 1;   
 
     // If this is the first marker received, record state and send marker messages
     if (snapshot[snapshot_id].color == Blue) {
-        last_snapshot_id = snapshot_id;
         snapshot[snapshot_id].state = node_state;
         memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(timestamp));
         snapshot[snapshot_id].color = Red;
         send_marker_messages(snapshot_id);
+        last_snapshot_id = snapshot_id;
     }
 
-    else {
-        // Marker message by neighbor received: stop recording channel for this neighbor
-        snapshot[snapshot_id].neighbors[sent_by] = Received;  
-        snapshot[snapshot_id].nb_marker = snapshot[snapshot_id].nb_marker + 1;   
+    // Detect if snapshot is ready to be sent to node 0
+    if (nb_neighbors == snapshot[snapshot_id].nb_marker) {
+        // Converge cast state (vector clock timestamp + node state + channel state) to node 0
 
-        // Detect if snapshot is ready to be sent to node 0
-        if (nb_neighbors == snapshot[snapshot_id].nb_marker) {
-            // Converge cast state (vector clock timestamp + node state + channel state) to node 0
+        if (node_id == 0) {
+            snapshots[snapshot_id][0].state = snapshot[snapshot_id].state;
+            snapshots[snapshot_id][0].channel = snapshot[snapshot_id].channel;
+            snapshots[snapshot_id][0].timestamp = snapshot[snapshot_id].timestamp;
+            number_received[snapshot_id]++;
+        }
 
-            if (node_id == 0) {
-                snapshots[snapshot_id][0].state = snapshot[snapshot_id].state;
-                snapshots[snapshot_id][0].channel = snapshot[snapshot_id].channel;
-                snapshots[snapshot_id][0].timestamp = snapshot[snapshot_id].timestamp;
+        else {
+            int length = nb_nodes * 3 +  12;
+            int timestamp_length = nb_nodes * 3;
+            char* converge_msg = (char*)malloc(length * sizeof(char) + 3);
 
-                number_received[snapshot_id]++;
-
-                if (number_received[snapshot_id] == node_id) {
-                    int i, k, max;
-                    
-                    int termination_detected = 1;
-                    for (i = 0; i < nb_nodes; i++) {
-                        if (snapshots[snapshot_id][i].state == Active)
-                            termination_detected = 0;
-                        if (snapshots[snapshot_id][i].channel == NotEmpty) 
-                            termination_detected = 0;
-                    }
-
-                    int consistent = 1;
-                    for (i = 0; (i < nb_nodes) && consistent; i++) {
-                        max = snapshots[snapshot_id][i].timestamp[i]; 
-                        for (k = 0; (k < nb_nodes) && consistent; k++) {
-                            if (snapshots[snapshot_id][k].timestamp[i] >= max) {
-                                printf("INCONSISTENT SNAPSHOT\n");
-                                consistent = 0;
-                            } 
-                        }
-                    } 
-                        
-                    if (termination_detected) 
-                    {
-                        char msg[10];
-                        for (i = 0; i < nb_neighbors; i++)
-                        {
-                            snprintf(msg, 6, "%02d%02dH", node_id, neighbors[i].id);
-                            send_msg(neighbors[i].send_socket, msg, 5);
-                        }
-                        output();
-                    }
-                }
-            }
-
-            else {
-                int length = nb_nodes * 3 +  12;
-                int timestamp_length = nb_nodes * 3;
-                char* converge_msg = (char*)malloc(length * sizeof(char) + 3);
-
-                snprintf(converge_msg, length + 1, "%02d%02dC%02d%03d%d%d%s", node_id, parent[node_id]
-                       , node_id, snapshot_id, snapshot[snapshot_id].state, snapshot[snapshot_id].channel, create_vector_msg(timestamp));
-                int i = 0;
-                for (i = 0; i < nb_neighbors; i++) {
-                    if (neighbors[i].id == parent[node_id]) {
-                        send_msg(neighbors[i].send_socket, converge_msg, length);
-                        break;
-                    }
+            snprintf(converge_msg, length + 1, "%02d%02dC%02d%03d%d%d%s", node_id, parent[node_id]
+                   , node_id, snapshot_id, snapshot[snapshot_id].state, snapshot[snapshot_id].channel, create_vector_msg(timestamp));
+            int i = 0;
+            for (i = 0; i < nb_neighbors; i++) {
+                if (neighbors[i].id == parent[node_id]) {
+                    send_msg(neighbors[i].send_socket, converge_msg, length);
+                    break;
                 }
             }
         }
@@ -614,6 +580,7 @@ void* snapshot_handler()
  
             memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(timestamp));
             snapshot[snapshot_id].color = Red;
+            last_snapshot_id = snapshot_id;
             send_marker_messages(snapshot_id);
             snapshot_id++;
         }
@@ -657,7 +624,6 @@ char * create_vector_msg(int * vector_clk)
         node_counter++;
     }
     vector_msg[i] = '\0';
-    //printf("%s\n", vector_msg);
     return vector_msg;
 }
 
@@ -723,12 +689,14 @@ void output()
     FILE * fp = fopen(file, "w");
     int snapshot_counter;
     int vector_counter;
-    for (snapshot_counter = 0; snapshot_counter < last_snapshot_id; snapshot_counter++)
+    for (snapshot_counter = 0; snapshot_counter < last_snapshot_id + 1; snapshot_counter++)
     {
         for (vector_counter = 0; vector_counter < nb_nodes; vector_counter++)
         {
             fprintf(fp, "%d ", snapshot[snapshot_counter].timestamp[vector_counter]);
         }
+
+        fprintf(fp, "\n");
     }
     fclose(fp);
     free (partial);
