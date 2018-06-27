@@ -116,6 +116,7 @@ int main(int argc, char* argv[])
     port = system_config.portNumbers[node_id];
 
     // Set up neighbors information and initialize vector timestamp
+    msgs_sent = 0;
     neighbors =  malloc(nb_neighbors * sizeof(Neighbor));
 
     int dimension = 200;
@@ -157,11 +158,13 @@ int main(int argc, char* argv[])
 
     // Set state of the node
     if ((node_id % 2) == 0) {
-        node_state = Active;
+        activate_node();
     }
     else {
         node_state = Passive;
     }
+
+    printf("Node state: %d\n", node_state);
 
     // Client sockets information
     struct hostent* h;
@@ -188,6 +191,14 @@ int main(int argc, char* argv[])
     sin.sin_addr.s_addr = INADDR_ANY;
     printf("PORT : %d\n", port);
     sin.sin_port = htons(port);
+
+
+    // Reuse port
+    int yes = 1;
+    if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
+        printf("Error changing bind option\n");
+        exit(1);
+    }
 
     // Bind socket to address and port number
     if (bind(s, (struct sockaddr*) &sin, sizeof(sin)) == -1) {
@@ -265,18 +276,18 @@ int main(int argc, char* argv[])
             {
                 clock_gettime(CLOCK_REALTIME, &current_time);
                 delta_ms = (current_time.tv_sec - previous_time.tv_sec) * 1000 + (current_time.tv_nsec - previous_time.tv_nsec) / 1000000;
-                    // Not totally correct but will do for now
                 if (delta_ms > min_send_delay)
                 {
                     // Source | Dest | Protocol | Length | Payload                    
                     Neighbor neighborToSend = neighbors[(rand() % nb_neighbors)];
                     total_length = 5 + 3 * nb_nodes + 1;
+                    timestamp[node_id]++;                    
                     snprintf(msg, total_length, "%02d%02dA%s", node_id, neighborToSend.id, create_vector_msg(timestamp));
                     send_msg(neighborToSend.send_socket, msg, total_length - 1);
+                    msgs_sent++;
                     previous_time.tv_sec = current_time.tv_sec;
                     previous_time.tv_nsec = current_time.tv_nsec;
                     msgs_to_send--;
-                    timestamp[node_id]++;                    
                 }
             }
             else
@@ -298,10 +309,9 @@ void* handle_neighbor(void* arg)
     char buffer[BUFFERSIZE];
 
     int s = *((int*) arg);
-    free(arg);
 
     while (1) {
-        if ((count = recv(s, buffer + rcv_len, BUFFERSIZE - rcv_len, 0) == -1)) {
+        if (((count = recv(s, buffer + rcv_len, BUFFERSIZE - rcv_len, 0)) == -1)) {
             printf("Error during socket read.\n");
             close(s);
             exit(1); 
@@ -310,7 +320,6 @@ void* handle_neighbor(void* arg)
             rcv_len = rcv_len + count;
             parse_buffer(buffer, &rcv_len);
         }
-
     }
 }
 
@@ -341,16 +350,16 @@ void parse_buffer(char* buffer, size_t* rcv_len)
                 printf("WRONG!\n");
         }
 
-        if (*rcv_len < 4 + message_len) 
+        if (*rcv_len < 5 + message_len) 
            break; 
 
         // Handle message received
-        handle_message(buffer, message_len + 4);
+        handle_message(buffer, message_len + 5);
 
         // Remove message from buffer and shuffle bytes of next message to start of the buffer
-        *rcv_len = *rcv_len - 4 - message_len;
+        *rcv_len = *rcv_len - 5 - message_len;
         if (*rcv_len != 0) {
-            memmove(buffer, buffer + 4 + message_len, *rcv_len);
+            memmove(buffer, buffer + 5 + message_len, *rcv_len);
         }
     }
 }
@@ -359,6 +368,8 @@ void parse_buffer(char* buffer, size_t* rcv_len)
 // Source | Dest | Protocol | Length | Payload
 int handle_message(char* message, size_t length)
 {
+    message[length] = '\0';
+    printf("MSG RECEIVED: %s\n", message);
     if (message_type(message) == APP_MSG)
     {
         if (node_state == Passive)
@@ -402,7 +413,7 @@ int handle_message(char* message, size_t length)
 
             number_received[snapshot_id]++;
 
-            if (number_received[snapshot_id] == node_id) {
+            if (number_received[snapshot_id] == nb_nodes) {
                 int i, k, max;
                 
                 int termination_detected = 1;
@@ -433,6 +444,7 @@ int handle_message(char* message, size_t length)
                         send_msg(neighbors[i].send_socket, msg, 5);
                     }
                     output();
+                    exit(0);
                 }
             }
         }
@@ -444,7 +456,7 @@ int handle_message(char* message, size_t length)
             if (neighbors[i].id != message_source(message)) {
                 char msg[10];
                 snprintf(msg, 6, "%02d%02dH", node_id, neighbors[i].id);
-                send_msg(neighbors[i].send_socket, message, (int) length);
+                send_msg(neighbors[i].send_socket, msg, (int) length);
             }
         }
         if (node_id) // output to file if not node 0, node 0 already outputs elsewhere and this prevents double
@@ -461,7 +473,7 @@ void send_marker_messages(int snapshot_id)
 
     for (i = 0; i < nb_neighbors; i++)
     {
-            snprintf(msg, 9, "%02d%02dM%3d", node_id, neighbors[i].id, snapshot_id);
+            snprintf(msg, 9, "%02d%02dM%03d", node_id, neighbors[i].id, snapshot_id);
             send_msg(neighbors[i].send_socket, msg, 8);
     }
 }
@@ -470,6 +482,8 @@ void send_marker_messages(int snapshot_id)
 void send_msg(int sockfd, char * buffer, int msglen)
 {
     int bytes_to_send = msglen; // |Source | Destination | Protocol ('M') | Length (0)
+    buffer[msglen] = '\0';
+    printf("MSG SENT: %s \n", buffer);
     while (bytes_to_send > 0)
     {
         bytes_to_send -= send(sockfd, buffer + (msglen - bytes_to_send), msglen, 0);
@@ -553,7 +567,7 @@ void record_snapshot(char* message)
                 int timestamp_length = nb_nodes * 3;
                 char* converge_msg = (char*)malloc(length * sizeof(char) + 3);
 
-                snprintf(converge_msg, length + 1, "%02d%02dC%02d%03d%c%c%s", node_id, parent[node_id]
+                snprintf(converge_msg, length + 1, "%02d%02dC%02d%03d%d%d%s", node_id, parent[node_id]
                        , node_id, snapshot_id, snapshot[snapshot_id].state, snapshot[snapshot_id].channel, create_vector_msg(timestamp));
                 int i = 0;
                 for (i = 0; i < nb_neighbors; i++) {
