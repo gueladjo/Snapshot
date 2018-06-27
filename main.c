@@ -96,7 +96,6 @@ int nb_neighbors;
 int main(int argc, char* argv[])
 {
     // Config struct filled when config file parsed
-
     srand(time(NULL));
 
     read_config_file(&system_config, argv[2]);
@@ -163,7 +162,7 @@ int main(int argc, char* argv[])
         node_state = Passive;
     }
 
-    // Client sockets information
+   // Client sockets information
     struct hostent* h;
 
     // Server Socket information
@@ -189,6 +188,12 @@ int main(int argc, char* argv[])
     printf("PORT : %d\n", port);
     sin.sin_port = htons(port);
 
+    // Fill in socket address structure with host info
+    memset(&pin, 0, sizeof(pin));
+    pin.sin_family = AF_INET;
+    pin.sin_addr.s_addr = ((struct in_addr *)(h->h_addr))->s_addr;
+    pin.sin_port = htons(neighbors[j].port);
+
     // Bind socket to address and port number
     if (bind(s, (struct sockaddr*) &sin, sizeof(sin)) == -1) {
         printf("Error on bind call.\n");
@@ -202,7 +207,7 @@ int main(int argc, char* argv[])
     }
 
     // Create client sockets to neighbors of the node
-    int j = 0;
+    j = 0;
     for (j = 0; j < nb_neighbors; j++) {
         // Create TCP socket
         if ((neighbors[j].send_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
@@ -215,12 +220,6 @@ int main(int argc, char* argv[])
             printf("Error on gethostbyname\n");
             exit(1);
         }
-
-        // Fill in socket address structure with host info
-        memset(&pin, 0, sizeof(pin));
-        pin.sin_family = AF_INET;
-        pin.sin_addr.s_addr = ((struct in_addr *)(h->h_addr))->s_addr;
-        pin.sin_port = htons(neighbors[j].port);
 
         // Connect to port on neighbor
         int connect_return = connect(neighbors[j].send_socket, (struct sockaddr *) &pin, sizeof(pin));

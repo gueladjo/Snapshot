@@ -102,8 +102,13 @@ int* read_config_file(config * system, char* fileName)
 
                 fscanf(fp, "%s", stringInput);
 
+<<<<<<< HEAD
+                snprintf(system->hostNames[linesRead], 18, "%s.utdallas.edu", stringInput);
+                //strcpy(system->hostNames[linesRead], stringInput); // Not sure why I'm getting a warning here?
+=======
                 //strcpy(system->hostNames[linesRead], stringInput); // Not sure why I'm getting a warning here?
                 snprintf(system->hostNames[linesRead], 18, "%s.utdallas.edu", stringInput);
+>>>>>>> pr/6
                 tokensRead++;                                   
 
                 matched = fscanf(fp, "%d", &input);
