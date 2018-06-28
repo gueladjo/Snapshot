@@ -87,6 +87,8 @@ enum State node_state;
 int* timestamp;
 int* s_neighbor;
 int * parent;
+int halt_received = 0;
+
 
 int msgs_sent; // Messages sent by this node, to be compared with max_number
 int msgs_to_send; // Messages to send on this active session (between min and maxperactive)
@@ -124,6 +126,7 @@ int main(int argc, char* argv[])
     int i, k;
     for (i = 0; i < dimension; i++) {
         snapshot[i].timestamp = malloc(nb_nodes * sizeof(int));
+        memset(snapshot[i].timestamp, 0, nb_nodes * sizeof(int));
         snapshot[i].neighbors = malloc(nb_neighbors * sizeof(enum Marker));
 
         snapshot[i].color = Blue;
@@ -235,12 +238,12 @@ int main(int argc, char* argv[])
 
         // Connect to port on neighbor
         int connect_return = connect(neighbors[j].send_socket, (struct sockaddr *) &pin, sizeof(pin));
-        printf("Node %d retrying to connect.\n", node_id);
+        printf("Node %d trying to connect to node %d.\n", node_id, neighbors[j].id);
         while (connect_return == -1) {
             connect_return = connect(neighbors[j].send_socket, (struct sockaddr *) &pin, sizeof(pin));
             sleep(1);
         }
-        printf("Node %d connected to neighbor.\n", node_id);
+        printf("Node %d connected to neighbor %d.\n", node_id, neighbors[j].id);
     }
 
     // Create thread for receiving each neighbor messages
@@ -369,8 +372,9 @@ void parse_buffer(char* buffer, size_t* rcv_len)
 // Source | Dest | Protocol | Length | Payload
 int handle_message(char* message, size_t length)
 {
-    message[length] = '\0';
-    printf("MSG RECEIVED: %s\n", message);
+    char* temp = strdup(message);
+    temp[length] = '\0';
+    printf("MSG RCVD: %s LENGTH: %d\n", temp, length);
     if (message_type(message) == APP_MSG)
     {
         if (node_state == Passive)
@@ -427,6 +431,16 @@ int handle_message(char* message, size_t length)
 
                 int consistent = 1;
 
+
+                for (i = 0; (i < nb_nodes) && consistent; i++) {
+                    printf("Node %d:", i);
+                    for (k = 0; (k < nb_nodes) && consistent; k++) {
+                        printf(" %d", snapshots[snapshot_id][i].timestamp[k]);
+                    }
+                    printf("\n");
+                } 
+
+
                 for (i = 0; (i < nb_nodes) && consistent; i++) {
                     max = snapshots[snapshot_id][i].timestamp[i]; 
                     for (k = 0; (k < nb_nodes) && consistent; k++) {
@@ -455,16 +469,19 @@ int handle_message(char* message, size_t length)
 
     else if (message_type(message) == HALT) {
         int i;
-        for (i = 0; i < nb_neighbors; i++) {
-            if (neighbors[i].id != message_source(message)) {
-                char msg[10];
-                snprintf(msg, 6, "%02d%02dH", node_id, neighbors[i].id);
-                send_msg(neighbors[i].send_socket, msg, (int) length);
+        if (halt_received == 0) {
+            halt_received = 1;
+            for (i = 0; i < nb_neighbors; i++) {
+                if (neighbors[i].id != message_source(message)) {
+                    char msg[10];
+                    snprintf(msg, 6, "%02d%02dH", node_id, neighbors[i].id);
+                    send_msg(neighbors[i].send_socket, msg, (int) length);
+                }
             }
+            if (node_id) // output to file if not node 0, node 0 already outputs elsewhere and this prevents double
+                output();
+            exit(0);
         }
-        if (node_id) // output to file if not node 0, node 0 already outputs elsewhere and this prevents double
-            output();
-        exit(0);
     }
 }
 
@@ -679,6 +696,7 @@ char * message_payload(char * msg)
 
 void output()
 {
+    printf("OUTPUT\n");
     int txtlength = strlen(system_config.config_name);
     int outlength = strlen(system_config.config_name) + 5;
     char * partial = malloc(txtlength-4);
