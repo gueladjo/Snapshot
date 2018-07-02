@@ -309,12 +309,6 @@ int ** create_spanning_tree(int ** out_tree_neighbor_count, int ** out_parents, 
     DFS(0, neighbor_index_at, num_neighbors_at, num_nodes, tree, *out_tree_neighbor_count, visited, *out_parents);
 
     free (visited);
-    int i;
-    for (i = 0; i< num_nodes; i++)
-    {
-        free(neighbor_index_at[i]);
-    }
-    free (neighbor_index_at);
     return tree;
 }
 
@@ -356,19 +350,7 @@ int **  DFS(int current_index, int ** neighbor_indices, int * num_neighbors_at, 
 // (output) neighbor_indices[0] = [2 | 3 | 4]
 int ** convertToIndex(int * node_ids, int ** neighbor_ids, int * num_neighbors_at, int num_nodes)
 {
-
-    int ** nodeNeighborIndices = (int ** )malloc(num_nodes * sizeof(int*));
-    int i, j;
-    for (i = 0; i< num_nodes; i++)
-    {
-        nodeNeighborIndices[i] = (int*) malloc(num_neighbors_at[i] * sizeof(int));
-        for (j = 0; j < num_neighbors_at[j]; j++)
-        {
-            nodeNeighborIndices[i][j] = find(neighbor_ids[i][j], node_ids, num_nodes); 
-        }
-    }
-    return nodeNeighborIndices;
-
+    return neighbor_ids;
 }
 
 void printArray(int * array, int length)
@@ -384,11 +366,5 @@ void printArray(int * array, int length)
 // returns index of value in array
 int find(int value, int * array, int length)
 {
-    int i;
-    for (i = 0; i < length; i++)
-    {
-        if (array[i] == value)
-            return i;
-    }
-    return -1;
+    return value;
 }

@@ -45,6 +45,7 @@ Snapshot** snapshots;
 int* number_received;
 
 int last_snapshot_id = -1;
+int last_cast_id = 0;
 
 void* handle_neighbor(void* arg);
 void parse_buffer(char* buffer, size_t* rcv_len);
@@ -87,8 +88,7 @@ enum State node_state;
 int* timestamp;
 int* s_neighbor;
 int * parent;
-int halt_received = 0;
-
+int halt_received;
 
 int msgs_sent; // Messages sent by this node, to be compared with max_number
 int msgs_to_send; // Messages to send on this active session (between min and maxperactive)
@@ -127,13 +127,13 @@ int main(int argc, char* argv[])
     for (i = 0; i < dimension; i++) {
         snapshot[i].timestamp = malloc(nb_nodes * sizeof(int));
         memset(snapshot[i].timestamp, 0, nb_nodes * sizeof(int));
-        snapshot[i].neighbors = malloc(nb_neighbors * sizeof(enum Marker));
+        snapshot[i].neighbors = malloc(nb_nodes * sizeof(enum Marker));
 
         snapshot[i].color = Blue;
         snapshot[i].channel = Empty;
         snapshot[i].nb_marker = 0;
 
-        for (k = 0; k < nb_neighbors; k++) {
+        for (k = 0; k < nb_nodes; k++) {
             snapshot[i].neighbors[k] = NotReceived;
         }
     }
@@ -142,6 +142,7 @@ int main(int argc, char* argv[])
     memset(timestamp, 0, nb_nodes * sizeof(int));
     
     number_received = malloc(dimension * sizeof(int));
+    memset(number_received, 0, dimension * sizeof(int));
     snapshots = malloc(dimension * sizeof(Snapshot*));
 
     for (i = 0; i < dimension; i++) {
@@ -166,6 +167,12 @@ int main(int argc, char* argv[])
     else {
         node_state = Passive;
     }
+
+    // Halt initialize
+    if (node_id == 0) 
+        halt_received = 1;
+    else
+        halt_received = 0;
 
     printf("Node state: %d\n", node_state);
 
@@ -372,7 +379,8 @@ void parse_buffer(char* buffer, size_t* rcv_len)
 // Source | Dest | Protocol | Length | Payload
 int handle_message(char* message, size_t length)
 {
-    char* temp = strdup(message);
+    char temp[300];
+    strcpy(temp, message);
     temp[length] = '\0';
     printf("MSG RCVD: %s LENGTH: %d\n", temp, length);
     if (message_type(message) == APP_MSG)
@@ -453,6 +461,7 @@ int handle_message(char* message, size_t length)
                     
                 if (termination_detected) 
                 {
+                    last_cast_id = snapshot_id;
                     char msg[10];
                     for (i = 0; i < nb_neighbors; i++)
                     {
@@ -469,7 +478,7 @@ int handle_message(char* message, size_t length)
 
     else if (message_type(message) == HALT) {
         int i;
-        if (halt_received == 0) {
+        if (!halt_received) {
             halt_received = 1;
             for (i = 0; i < nb_neighbors; i++) {
                 if (neighbors[i].id != message_source(message)) {
@@ -529,7 +538,7 @@ void record_snapshot(char* message)
     // If this is the first marker received, record state and send marker messages
     if (snapshot[snapshot_id].color == Blue) {
         snapshot[snapshot_id].state = node_state;
-        memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(timestamp));
+        memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(int) * nb_nodes);
         snapshot[snapshot_id].color = Red;
         send_marker_messages(snapshot_id);
         last_snapshot_id = snapshot_id;
@@ -595,7 +604,7 @@ void* snapshot_handler()
             previous_time.tv_sec = current_time.tv_sec;
             previous_time.tv_nsec = current_time.tv_nsec;
  
-            memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(timestamp));
+            memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(int) * nb_nodes);
             snapshot[snapshot_id].color = Red;
             last_snapshot_id = snapshot_id;
             send_marker_messages(snapshot_id);
