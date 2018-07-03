@@ -376,7 +376,7 @@ void parse_buffer(char* buffer, size_t* rcv_len)
                 message_len = 7 + 3 * nb_nodes;
                 break;
             case 'H':
-                message_len = 0;
+                message_len = 3;
                 break;
 
             default:
@@ -487,8 +487,8 @@ int handle_message(char* message, size_t length)
                     char msg[10];
                     for (i = 0; i < nb_neighbors; i++)
                     {
-                        snprintf(msg, 6, "%02d%02dH", node_id, neighbors[i].id);
-                        send_msg(neighbors[i].send_socket, msg, 5);
+                        snprintf(msg, 9, "%02d%02dH%03d", node_id, neighbors[i].id, last_cast_id);
+                        send_msg(neighbors[i].send_socket, msg, 8);
                     }
 
                     output();
@@ -502,10 +502,11 @@ int handle_message(char* message, size_t length)
         int i;
         if (!halt_received) {
             halt_received = 1;
+            sscanf(message_payload(message), "%3d", &last_cast_id);
             for (i = 0; i < nb_neighbors; i++) {
                 if (neighbors[i].id != message_source(message)) {
                     char msg[10];
-                    snprintf(msg, 6, "%02d%02dH", node_id, neighbors[i].id);
+                    snprintf(msg, 9, "%02d%02dH%03d", node_id, neighbors[i].id, last_cast_id);
                     send_msg(neighbors[i].send_socket, msg, (int) length);
                 }
             }
