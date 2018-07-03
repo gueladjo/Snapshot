@@ -1,0 +1,19 @@
+This program implements a node process running in a distributed system. It runs an MAP protocol and uses
+Lamport Snapshot protocol to detect termination of the MAP protocol. A protocol is then implemented to bring all nodes
+to a halt.
+
+The launcher.sh script logs into the specified machines and starts each node individually. It uses
+UT Dallas dcXX distributed systems servers.
+
+A config file is supplied to determine the distributed system topology, host names, ports and application
+parameters.
+
+Compile the program:
+
+make
+
+Run the program:
+
+./node nodeID config_file
+
+example: ./node 2 config.txt
