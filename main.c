@@ -82,6 +82,9 @@ int min_send_delay;
 int snapshot_delay;
 int max_number;
 
+    int dimension = 200;
+
+
 config system_config; 
 
 // Node Paramters
@@ -124,7 +127,6 @@ int main(int argc, char* argv[])
     msgs_sent = 0;
     neighbors =  malloc(nb_neighbors * sizeof(Neighbor));
 
-    int dimension = 200;
     snapshot =  malloc(dimension * sizeof(Snapshot));
     int i, k;
     for (i = 0; i < dimension; i++) {
@@ -329,7 +331,6 @@ int main(int argc, char* argv[])
             }
         }
     }
-
     exit(0);
 }
 
@@ -490,7 +491,7 @@ int handle_message(char* message, size_t length)
                         snprintf(msg, 9, "%02d%02dH%03d", node_id, neighbors[i].id, last_cast_id);
                         send_msg(neighbors[i].send_socket, msg, 8);
                     }
-
+                    free(timestamp_vec);
                     output();
                     exit(0);
                 }
@@ -771,4 +772,24 @@ void output()
     fclose(fp);
     free (partial);
     free (file); 
+    free(neighbors);
+    int i, j;
+    for (i = 0; i < dimension; i++)
+    {
+        free(snapshot[i].timestamp);
+        free(snapshot[i].neighbors);
+
+        for (j = 0; j < nb_nodes; j++)
+        {
+            if (i < last_cast_id)
+            {
+                free(snapshots[i][j].timestamp);
+                free(snapshots[i][j].neighbors);
+            }
+        }
+        free(snapshots[i]);
+    }
+    free(snapshot);
+    free(snapshots);
+    free(timestamp);
 }

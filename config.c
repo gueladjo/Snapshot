@@ -368,3 +368,9 @@ int find(int value, int * array, int length)
 {
     return value;
 }
+
+
+int neighbor_index(int neighbor_id, int * neighbors, int num_neighbors)
+{
+
+}
