@@ -49,11 +49,7 @@ Snapshot** snapshots;
 int* number_received;
 
 int last_snapshot_id = -1;
-<<<<<<< HEAD
-int last_cast_id = 0;
-=======
 int last_cast_id = -1;
->>>>>>> pr/7
 
 void* handle_neighbor(void* arg);
 void parse_buffer(char* buffer, size_t* rcv_len);
@@ -99,12 +95,7 @@ enum State node_state;
 int* timestamp;
 int* s_neighbor;
 int * parent;
-<<<<<<< HEAD
-int halt_received = 0;
-
-=======
 int halt_received;
->>>>>>> pr/7
 
 int msgs_sent; // Messages sent by this node, to be compared with max_number
 int msgs_to_send; // Messages to send on this active session (between min and maxperactive)
@@ -147,10 +138,6 @@ int main(int argc, char* argv[])
         snapshot[i].channel = Empty;
         snapshot[i].nb_marker = 0;
 
-<<<<<<< HEAD
-
-=======
->>>>>>> pr/7
         for (k = 0; k < nb_nodes; k++) {
             snapshot[i].neighbors[k] = NotReceived;
         }
@@ -192,15 +179,12 @@ int main(int argc, char* argv[])
         node_state = Passive;
     }
 
-<<<<<<< HEAD
-=======
     // Halt initialize
     if (node_id == 0) 
         halt_received = 1;
     else
         halt_received = 0;
 
->>>>>>> pr/7
     printf("Node state: %d\n", node_state);
 
     // Client sockets information
@@ -313,23 +297,12 @@ int main(int argc, char* argv[])
             if (msgs_to_send > 0)
             {
                 clock_gettime(CLOCK_REALTIME, &current_time);
-<<<<<<< HEAD
-                delta_ms = (current_time.tv_sec - previous_time.tv_sec) * 1000 + (current_time.tv_nsec - previous_time.tv_nsec) / 1000000;
-=======
                 delta_ms = (current_time.tv_sec - previous_time.tv_sec) * 1000 +
                     (current_time.tv_nsec - previous_time.tv_nsec) / 1000000;
->>>>>>> pr/7
                 if (delta_ms > min_send_delay)
                 {
                     // Source | Dest | Protocol | Length | Payload                    
                     Neighbor neighborToSend = neighbors[(rand() % nb_neighbors)];
-<<<<<<< HEAD
-                    total_length = 5 + 3 * nb_nodes + 1;
-                    timestamp[node_id]++;                    
-                    char * ts = create_vector_msg(timestamp);
-                    snprintf(msg, total_length, "%02d%02dA%s", node_id, neighborToSend.id, ts);
-                    send_msg(neighborToSend.send_socket, msg, total_length - 1);
-=======
 
                     if (sem_wait(&send_marker) == -1) {
                         printf("Error during wait on mutex.\n");
@@ -346,15 +319,11 @@ int main(int argc, char* argv[])
                         exit(1);
                     } 
 
->>>>>>> pr/7
                     msgs_sent++;
                     previous_time.tv_sec = current_time.tv_sec;
                     previous_time.tv_nsec = current_time.tv_nsec;
                     msgs_to_send--;
-<<<<<<< HEAD
                     free(ts);
-=======
->>>>>>> pr/7
                 }
             }
             else
@@ -436,14 +405,8 @@ int handle_message(char* message, size_t length)
 {
     char temp[300];
     strcpy(temp, message);
-<<<<<<< HEAD
-    temp[length]= '\0';
-
-    printf("MSG RCVD: %s LENGTH: %d\n", temp, length);
-=======
     temp[length] = '\0';
     printf("MSG RCVD: %s LENGTH: %d\n", temp, (int) length);
->>>>>>> pr/7
     if (message_type(message) == APP_MSG)
     {
         if (node_state == Passive)
@@ -529,11 +492,7 @@ int handle_message(char* message, size_t length)
                         snprintf(msg, 9, "%02d%02dH%03d", node_id, neighbors[i].id, last_cast_id);
                         send_msg(neighbors[i].send_socket, msg, 8);
                     }
-<<<<<<< HEAD
                     free(timestamp_vec);
-=======
-
->>>>>>> pr/7
                     output();
                     exit(0);
                 }
@@ -543,14 +502,6 @@ int handle_message(char* message, size_t length)
 
     else if (message_type(message) == HALT) {
         int i;
-<<<<<<< HEAD
-        if (halt_received == 0) {
-            halt_received = 1;
-            for (i = 0; i < nb_neighbors; i++) {
-                if (neighbors[i].id != message_source(message)) {
-                    char msg[10];
-                    snprintf(msg, 6, "%02d%02dH", node_id, neighbors[i].id);
-=======
         if (!halt_received) {
             halt_received = 1;
             sscanf(message_payload(message), "%3d", &last_cast_id);
@@ -558,7 +509,6 @@ int handle_message(char* message, size_t length)
                 if (neighbors[i].id != message_source(message)) {
                     char msg[10];
                     snprintf(msg, 9, "%02d%02dH%03d", node_id, neighbors[i].id, last_cast_id);
->>>>>>> pr/7
                     send_msg(neighbors[i].send_socket, msg, (int) length);
                 }
             }
@@ -612,30 +562,21 @@ void record_snapshot(char* message)
 
     // If this is the first marker received, record state and send marker messages
     if (snapshot[snapshot_id].color == Blue) {
-<<<<<<< HEAD
-        snapshot[snapshot_id].state = node_state;
-        int vector_counter;
-        memcpy(snapshot[snapshot_id].timestamp, timestamp, nb_nodes * sizeof(int));
-=======
         if (sem_wait(&send_marker) == -1) {
             printf("Error during wait on mutex.\n");
             exit(1);
         } 
 
->>>>>>> pr/7
         snapshot[snapshot_id].color = Red;
         snapshot[snapshot_id].state = node_state;
         memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(int) * nb_nodes);
         send_marker_messages(snapshot_id);
         last_snapshot_id = snapshot_id;
-<<<<<<< HEAD
-=======
 
         if (sem_post(&send_marker) == -1) {
             printf("Error during signal on mutex.\n");
             exit(1);
         } 
->>>>>>> pr/7
     }
 
     // Detect if snapshot is ready to be sent to node 0
@@ -820,11 +761,7 @@ void output()
     FILE * fp = fopen(file, "w");
     int snapshot_counter;
     int vector_counter;
-<<<<<<< HEAD
-    for (snapshot_counter = 0; snapshot_counter < last_snapshot_id + 1; snapshot_counter++)
-=======
     for (snapshot_counter = 0; snapshot_counter < last_cast_id + 1; snapshot_counter++)
->>>>>>> pr/7
     {
         for (vector_counter = 0; vector_counter < nb_nodes; vector_counter++)
         {
