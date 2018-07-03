@@ -9,6 +9,7 @@
 #include<netinet/in.h>
 #include<netdb.h>
 #include<pthread.h>
+#include<semaphore.h>
 #include "config.h"
 
 #define BUFFERSIZE 512
@@ -17,6 +18,9 @@
 #define CONVERGE_CAST 'C'
 #define HALT 'H'
 #define MSG_BUFFER_SIZE 100
+
+// Mutex
+sem_t send_marker;
 
 typedef struct Neighbor {
     int id;
@@ -45,7 +49,7 @@ Snapshot** snapshots;
 int* number_received;
 
 int last_snapshot_id = -1;
-int last_cast_id = 0;
+int last_cast_id = -1;
 
 void* handle_neighbor(void* arg);
 void parse_buffer(char* buffer, size_t* rcv_len);
@@ -98,7 +102,6 @@ int nb_neighbors;
 int main(int argc, char* argv[])
 {
     // Config struct filled when config file parsed
-
     srand(time(NULL));
 
     read_config_file(&system_config, argv[2]);
@@ -158,6 +161,12 @@ int main(int argc, char* argv[])
         neighbors[i].id = system_config.neighbors[this_index][i];
         neighbors[i].port = system_config.portNumbers[neighbors[i].id];
         memmove(neighbors[i].hostname, system_config.hostNames[neighbors[i].id], 18);
+    }
+
+    // Initialize mutex
+    if (sem_init(&send_marker, 0, 1) == -1) {
+        printf("Error during mutex init.\n");
+        exit(1);
     }
 
     // Set state of the node
@@ -274,7 +283,7 @@ int main(int argc, char* argv[])
         pthread_create(&pid, &attr, snapshot_handler, NULL);
     }
 
-    int total_length;
+    int total_length = 5 + 3 * nb_nodes + 1;
     struct timespec current_time, previous_time;
     clock_gettime(CLOCK_REALTIME, &previous_time);
     uint64_t delta_ms;
@@ -286,15 +295,28 @@ int main(int argc, char* argv[])
             if (msgs_to_send > 0)
             {
                 clock_gettime(CLOCK_REALTIME, &current_time);
-                delta_ms = (current_time.tv_sec - previous_time.tv_sec) * 1000 + (current_time.tv_nsec - previous_time.tv_nsec) / 1000000;
+                delta_ms = (current_time.tv_sec - previous_time.tv_sec) * 1000 +
+                    (current_time.tv_nsec - previous_time.tv_nsec) / 1000000;
                 if (delta_ms > min_send_delay)
                 {
                     // Source | Dest | Protocol | Length | Payload                    
                     Neighbor neighborToSend = neighbors[(rand() % nb_neighbors)];
-                    total_length = 5 + 3 * nb_nodes + 1;
+
+                    if (sem_wait(&send_marker) == -1) {
+                        printf("Error during wait on mutex.\n");
+                        exit(1);
+                    }
+
                     timestamp[node_id]++;                    
-                    snprintf(msg, total_length, "%02d%02dA%s", node_id, neighborToSend.id, create_vector_msg(timestamp));
+                    snprintf(msg, total_length, "%02d%02dA%s", node_id,
+                            neighborToSend.id, create_vector_msg(timestamp));
                     send_msg(neighborToSend.send_socket, msg, total_length - 1);
+
+                    if (sem_post(&send_marker) == -1) {
+                        printf("Error during signal on mutex.\n");
+                        exit(1);
+                    } 
+
                     msgs_sent++;
                     previous_time.tv_sec = current_time.tv_sec;
                     previous_time.tv_nsec = current_time.tv_nsec;
@@ -382,7 +404,7 @@ int handle_message(char* message, size_t length)
     char temp[300];
     strcpy(temp, message);
     temp[length] = '\0';
-    printf("MSG RCVD: %s LENGTH: %d\n", temp, length);
+    printf("MSG RCVD: %s LENGTH: %d\n", temp, (int) length);
     if (message_type(message) == APP_MSG)
     {
         if (node_state == Passive)
@@ -537,11 +559,21 @@ void record_snapshot(char* message)
 
     // If this is the first marker received, record state and send marker messages
     if (snapshot[snapshot_id].color == Blue) {
+        if (sem_wait(&send_marker) == -1) {
+            printf("Error during wait on mutex.\n");
+            exit(1);
+        } 
+
+        snapshot[snapshot_id].color = Red;
         snapshot[snapshot_id].state = node_state;
         memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(int) * nb_nodes);
-        snapshot[snapshot_id].color = Red;
         send_marker_messages(snapshot_id);
         last_snapshot_id = snapshot_id;
+
+        if (sem_post(&send_marker) == -1) {
+            printf("Error during signal on mutex.\n");
+            exit(1);
+        } 
     }
 
     // Detect if snapshot is ready to be sent to node 0
@@ -593,21 +625,31 @@ void* snapshot_handler()
     clock_gettime(CLOCK_REALTIME, &previous_time);
     uint64_t delta_ms;
 
-    while(1) {
+    while(last_cast_id == -1) {
         struct timespec current_time;
         clock_gettime(CLOCK_REALTIME, &current_time);
         delta_ms = (current_time.tv_sec - previous_time.tv_sec) * 1000 + (current_time.tv_nsec - previous_time.tv_nsec) / 1000000;
 
         if (delta_ms > snapshot_delay) {
             // Record node 0 state and mark it as "red"
-            snapshot[snapshot_id].state = node_state;
             previous_time.tv_sec = current_time.tv_sec;
             previous_time.tv_nsec = current_time.tv_nsec;
  
+            if (sem_wait(&send_marker) == -1) {
+                printf("Error during wait on mutex.\n");
+                exit(1);
+            } 
+
+            snapshot[snapshot_id].state = node_state;
             memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(int) * nb_nodes);
             snapshot[snapshot_id].color = Red;
             last_snapshot_id = snapshot_id;
             send_marker_messages(snapshot_id);
+
+            if (sem_post(&send_marker) == -1) {
+                printf("Error during signal on mutex.\n");
+                exit(1);
+            } 
             snapshot_id++;
         }
     }
@@ -716,7 +758,7 @@ void output()
     FILE * fp = fopen(file, "w");
     int snapshot_counter;
     int vector_counter;
-    for (snapshot_counter = 0; snapshot_counter < last_snapshot_id + 1; snapshot_counter++)
+    for (snapshot_counter = 0; snapshot_counter < last_cast_id + 1; snapshot_counter++)
     {
         for (vector_counter = 0; vector_counter < nb_nodes; vector_counter++)
         {
