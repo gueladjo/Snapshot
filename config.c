@@ -350,10 +350,6 @@ int **  DFS(int current_index, int ** neighbor_indices, int * num_neighbors_at, 
 // (output) neighbor_indices[0] = [2 | 3 | 4]
 int ** convertToIndex(int * node_ids, int ** neighbor_ids, int * num_neighbors_at, int num_nodes)
 {
-<<<<<<< HEAD
-
-=======
->>>>>>> pr/7
     return neighbor_ids;
 }
 
@@ -371,13 +367,10 @@ void printArray(int * array, int length)
 int find(int value, int * array, int length)
 {
     return value;
-<<<<<<< HEAD
 }
 
 
 int neighbor_index(int neighbor_id, int * neighbors, int num_neighbors)
 {
 
-=======
->>>>>>> pr/7
 }

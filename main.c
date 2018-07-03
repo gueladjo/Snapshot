@@ -323,7 +323,6 @@ int main(int argc, char* argv[])
                     previous_time.tv_sec = current_time.tv_sec;
                     previous_time.tv_nsec = current_time.tv_nsec;
                     msgs_to_send--;
-                    free(ts);
                 }
             }
             else
