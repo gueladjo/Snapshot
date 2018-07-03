@@ -45,6 +45,7 @@ Snapshot** snapshots;
 int* number_received;
 
 int last_snapshot_id = -1;
+int last_cast_id = 0;
 
 void* handle_neighbor(void* arg);
 void parse_buffer(char* buffer, size_t* rcv_len);
@@ -77,6 +78,9 @@ int min_send_delay;
 int snapshot_delay;
 int max_number;
 
+    int dimension = 200;
+
+
 config system_config; 
 
 // Node Paramters
@@ -87,6 +91,8 @@ enum State node_state;
 int* timestamp;
 int* s_neighbor;
 int * parent;
+int halt_received = 0;
+
 
 int msgs_sent; // Messages sent by this node, to be compared with max_number
 int msgs_to_send; // Messages to send on this active session (between min and maxperactive)
@@ -96,6 +102,7 @@ int nb_neighbors;
 int main(int argc, char* argv[])
 {
     // Config struct filled when config file parsed
+
     srand(time(NULL));
 
     read_config_file(&system_config, argv[2]);
@@ -108,27 +115,29 @@ int main(int argc, char* argv[])
     snapshot_delay = system_config.snapshot_delay;
     max_number = system_config.max_number;
 
-    sscanf(argv[1], "%i", &node_id);
+    sscanf(argv[1], "%d", &node_id);
 
     this_index= find(node_id, system_config.nodeIDs, system_config.nodes_in_system);
     nb_neighbors = system_config.neighborCount[this_index];
-
+    port = system_config.portNumbers[node_id];
 
     // Set up neighbors information and initialize vector timestamp
+    msgs_sent = 0;
     neighbors =  malloc(nb_neighbors * sizeof(Neighbor));
 
-    int dimension = 200;
     snapshot =  malloc(dimension * sizeof(Snapshot));
     int i, k;
     for (i = 0; i < dimension; i++) {
         snapshot[i].timestamp = malloc(nb_nodes * sizeof(int));
-        snapshot[i].neighbors = malloc(nb_neighbors * sizeof(enum Marker));
+        memset(snapshot[i].timestamp, 0, nb_nodes * sizeof(int));
+        snapshot[i].neighbors = malloc(nb_nodes * sizeof(enum Marker));
 
         snapshot[i].color = Blue;
         snapshot[i].channel = Empty;
         snapshot[i].nb_marker = 0;
 
-        for (k = 0; k < nb_neighbors; k++) {
+
+        for (k = 0; k < nb_nodes; k++) {
             snapshot[i].neighbors[k] = NotReceived;
         }
     }
@@ -137,6 +146,7 @@ int main(int argc, char* argv[])
     memset(timestamp, 0, nb_nodes * sizeof(int));
     
     number_received = malloc(dimension * sizeof(int));
+    memset(number_received, 0, dimension * sizeof(int));
     snapshots = malloc(dimension * sizeof(Snapshot*));
 
     for (i = 0; i < dimension; i++) {
@@ -156,20 +166,24 @@ int main(int argc, char* argv[])
 
     // Set state of the node
     if ((node_id % 2) == 0) {
-        node_state = Active;
+        activate_node();
     }
     else {
         node_state = Passive;
     }
 
-   // Client sockets information
+    printf("Node state: %d\n", node_state);
+
+    // Client sockets information
     struct hostent* h;
 
     // Server Socket information
     int s;
     struct sockaddr_in sin;
+    struct sockaddr_in sin2;
     struct sockaddr_in pin;
     int addrlen;
+
     pthread_t tid;
     pthread_attr_t attr;
 
@@ -183,13 +197,16 @@ int main(int argc, char* argv[])
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
     sin.sin_addr.s_addr = INADDR_ANY;
+    printf("PORT : %d\n", port);
     sin.sin_port = htons(port);
 
-    // Fill in socket address structure with host info
-    memset(&pin, 0, sizeof(pin));
-    pin.sin_family = AF_INET;
-    pin.sin_addr.s_addr = ((struct in_addr *)(h->h_addr))->s_addr;
-    pin.sin_port = htons(neighbors[j].port);
+
+    // Reuse port
+    int yes = 1;
+    if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
+        printf("Error changing bind option\n");
+        exit(1);
+    }
 
     // Bind socket to address and port number
     if (bind(s, (struct sockaddr*) &sin, sizeof(sin)) == -1) {
@@ -204,7 +221,7 @@ int main(int argc, char* argv[])
     }
 
     // Create client sockets to neighbors of the node
-    j = 0;
+    int j = 0;
     for (j = 0; j < nb_neighbors; j++) {
         // Create TCP socket
         if ((neighbors[j].send_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
@@ -218,23 +235,30 @@ int main(int argc, char* argv[])
             exit(1);
         }
 
+        // Fill in socket address structure with host info
+        memset(&pin, 0, sizeof(pin));
+        pin.sin_family = AF_INET;
+        pin.sin_addr.s_addr = ((struct in_addr *)(h->h_addr))->s_addr;
+        pin.sin_port = htons(neighbors[j].port);
+
         // Connect to port on neighbor
         int connect_return = connect(neighbors[j].send_socket, (struct sockaddr *) &pin, sizeof(pin));
+        printf("Node %d trying to connect to node %d.\n", node_id, neighbors[j].id);
         while (connect_return == -1) {
             connect_return = connect(neighbors[j].send_socket, (struct sockaddr *) &pin, sizeof(pin));
-            printf("Node %d retrying to connect.\n", node_id);
+            sleep(1);
         }
+        printf("Node %d connected to neighbor %d.\n", node_id, neighbors[j].id);
     }
 
     // Create thread for receiving each neighbor messages
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    memset(&pin, 0, sizeof(pin));
-    addrlen = sizeof(pin);
+    addrlen = sizeof(sin2);
 
     i = 0;
     while (i < nb_neighbors) {
-        if ((neighbors[i].receive_socket = accept(s, (struct sockaddr *) &pin, (socklen_t*)&addrlen)) == -1) {
+        if ((neighbors[i].receive_socket = accept(s, (struct sockaddr *) &sin2, (socklen_t*)&addrlen)) == -1) {
             printf("Error on accept call.\n");
             exit(1);
         }
@@ -261,18 +285,20 @@ int main(int argc, char* argv[])
             {
                 clock_gettime(CLOCK_REALTIME, &current_time);
                 delta_ms = (current_time.tv_sec - previous_time.tv_sec) * 1000 + (current_time.tv_nsec - previous_time.tv_nsec) / 1000000;
-                    // Not totally correct but will do for now
                 if (delta_ms > min_send_delay)
                 {
                     // Source | Dest | Protocol | Length | Payload                    
                     Neighbor neighborToSend = neighbors[(rand() % nb_neighbors)];
                     total_length = 5 + 3 * nb_nodes + 1;
-                    snprintf(msg, total_length, "%02d%02dA%s", node_id, neighborToSend.id, create_vector_msg(timestamp));
+                    timestamp[node_id]++;                    
+                    char * ts = create_vector_msg(timestamp);
+                    snprintf(msg, total_length, "%02d%02dA%s", node_id, neighborToSend.id, ts);
                     send_msg(neighborToSend.send_socket, msg, total_length - 1);
+                    msgs_sent++;
                     previous_time.tv_sec = current_time.tv_sec;
                     previous_time.tv_nsec = current_time.tv_nsec;
                     msgs_to_send--;
-                    timestamp[node_id]++;                    
+                    free(ts);
                 }
             }
             else
@@ -281,7 +307,6 @@ int main(int argc, char* argv[])
             }
         }
     }
-
     exit(0);
 }
 
@@ -294,10 +319,9 @@ void* handle_neighbor(void* arg)
     char buffer[BUFFERSIZE];
 
     int s = *((int*) arg);
-    free(arg);
 
     while (1) {
-        if ((count = recv(s, buffer + rcv_len, BUFFERSIZE - rcv_len, 0) == -1)) {
+        if (((count = recv(s, buffer + rcv_len, BUFFERSIZE - rcv_len, 0)) == -1)) {
             printf("Error during socket read.\n");
             close(s);
             exit(1); 
@@ -306,7 +330,6 @@ void* handle_neighbor(void* arg)
             rcv_len = rcv_len + count;
             parse_buffer(buffer, &rcv_len);
         }
-
     }
 }
 
@@ -337,16 +360,16 @@ void parse_buffer(char* buffer, size_t* rcv_len)
                 printf("WRONG!\n");
         }
 
-        if (*rcv_len < 4 + message_len) 
+        if (*rcv_len < 5 + message_len) 
            break; 
 
         // Handle message received
-        handle_message(buffer, message_len + 4);
+        handle_message(buffer, message_len + 5);
 
         // Remove message from buffer and shuffle bytes of next message to start of the buffer
-        *rcv_len = *rcv_len - 4 - message_len;
+        *rcv_len = *rcv_len - 5 - message_len;
         if (*rcv_len != 0) {
-            memmove(buffer, buffer + 4 + message_len, *rcv_len);
+            memmove(buffer, buffer + 5 + message_len, *rcv_len);
         }
     }
 }
@@ -355,6 +378,11 @@ void parse_buffer(char* buffer, size_t* rcv_len)
 // Source | Dest | Protocol | Length | Payload
 int handle_message(char* message, size_t length)
 {
+    char temp[300];
+    strcpy(temp, message);
+    temp[length]= '\0';
+
+    printf("MSG RCVD: %s LENGTH: %d\n", temp, length);
     if (message_type(message) == APP_MSG)
     {
         if (node_state == Passive)
@@ -398,7 +426,7 @@ int handle_message(char* message, size_t length)
 
             number_received[snapshot_id]++;
 
-            if (number_received[snapshot_id] == node_id) {
+            if (number_received[snapshot_id] == nb_nodes) {
                 int i, k, max;
                 
                 int termination_detected = 1;
@@ -410,10 +438,21 @@ int handle_message(char* message, size_t length)
                 }
 
                 int consistent = 1;
+
+
+                for (i = 0; (i < nb_nodes) && consistent; i++) {
+                    printf("Node %d:", i);
+                    for (k = 0; (k < nb_nodes) && consistent; k++) {
+                        printf(" %d", snapshots[snapshot_id][i].timestamp[k]);
+                    }
+                    printf("\n");
+                } 
+
+
                 for (i = 0; (i < nb_nodes) && consistent; i++) {
                     max = snapshots[snapshot_id][i].timestamp[i]; 
                     for (k = 0; (k < nb_nodes) && consistent; k++) {
-                        if (snapshots[snapshot_id][k].timestamp[i] >= max) {
+                        if (snapshots[snapshot_id][k].timestamp[i] > max) {
                             printf("INCONSISTENT SNAPSHOT\n");
                             consistent = 0;
                         } 
@@ -422,13 +461,16 @@ int handle_message(char* message, size_t length)
                     
                 if (termination_detected) 
                 {
+                    last_cast_id = snapshot_id;
                     char msg[10];
                     for (i = 0; i < nb_neighbors; i++)
                     {
                         snprintf(msg, 6, "%02d%02dH", node_id, neighbors[i].id);
                         send_msg(neighbors[i].send_socket, msg, 5);
                     }
+                    free(timestamp_vec);
                     output();
+                    exit(0);
                 }
             }
         }
@@ -436,16 +478,19 @@ int handle_message(char* message, size_t length)
 
     else if (message_type(message) == HALT) {
         int i;
-        for (i = 0; i < nb_neighbors; i++) {
-            if (neighbors[i].id != message_source(message)) {
-                char msg[10];
-                snprintf(msg, 6, "%02d%02dH", node_id, neighbors[i].id);
-                send_msg(neighbors[i].send_socket, message, (int) length);
+        if (halt_received == 0) {
+            halt_received = 1;
+            for (i = 0; i < nb_neighbors; i++) {
+                if (neighbors[i].id != message_source(message)) {
+                    char msg[10];
+                    snprintf(msg, 6, "%02d%02dH", node_id, neighbors[i].id);
+                    send_msg(neighbors[i].send_socket, msg, (int) length);
+                }
             }
+            if (node_id) // output to file if not node 0, node 0 already outputs elsewhere and this prevents double
+                output();
+            exit(0);
         }
-        if (node_id) // output to file if not node 0, node 0 already outputs elsewhere and this prevents double
-            output();
-        exit(0);
     }
 }
 
@@ -457,7 +502,7 @@ void send_marker_messages(int snapshot_id)
 
     for (i = 0; i < nb_neighbors; i++)
     {
-            snprintf(msg, 9, "%02d%02dM%3d", node_id, neighbors[i].id, snapshot_id);
+            snprintf(msg, 9, "%02d%02dM%03d", node_id, neighbors[i].id, snapshot_id);
             send_msg(neighbors[i].send_socket, msg, 8);
     }
 }
@@ -466,6 +511,8 @@ void send_marker_messages(int snapshot_id)
 void send_msg(int sockfd, char * buffer, int msglen)
 {
     int bytes_to_send = msglen; // |Source | Destination | Protocol ('M') | Length (0)
+    buffer[msglen] = '\0';
+    printf("MSG SENT: %s \n", buffer);
     while (bytes_to_send > 0)
     {
         bytes_to_send -= send(sockfd, buffer + (msglen - bytes_to_send), msglen, 0);
@@ -482,81 +529,45 @@ void record_snapshot(char* message)
 {
     int sent_by = message_source(message);
     int snapshot_id;
-    sscanf(message_payload(message), "%i", &snapshot_id);
+    sscanf(message_payload(message), "%3d", &snapshot_id);
+
+    // Marker message by neighbor received: stop recording channel for this neighbor
+    snapshot[snapshot_id].neighbors[sent_by] = Received;  
+    snapshot[snapshot_id].nb_marker = snapshot[snapshot_id].nb_marker + 1;   
 
     // If this is the first marker received, record state and send marker messages
     if (snapshot[snapshot_id].color == Blue) {
-        last_snapshot_id = snapshot_id;
         snapshot[snapshot_id].state = node_state;
-        memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(timestamp));
+        int vector_counter;
+        memcpy(snapshot[snapshot_id].timestamp, timestamp, nb_nodes * sizeof(int));
         snapshot[snapshot_id].color = Red;
         send_marker_messages(snapshot_id);
+        last_snapshot_id = snapshot_id;
     }
 
-    else {
-        // Marker message by neighbor received: stop recording channel for this neighbor
-        snapshot[snapshot_id].neighbors[sent_by] = Received;  
-        snapshot[snapshot_id].nb_marker = snapshot[snapshot_id].nb_marker + 1;   
+    // Detect if snapshot is ready to be sent to node 0
+    if (nb_neighbors == snapshot[snapshot_id].nb_marker) {
+        // Converge cast state (vector clock timestamp + node state + channel state) to node 0
 
-        // Detect if snapshot is ready to be sent to node 0
-        if (nb_neighbors == snapshot[snapshot_id].nb_marker) {
-            // Converge cast state (vector clock timestamp + node state + channel state) to node 0
+        if (node_id == 0) {
+            snapshots[snapshot_id][0].state = snapshot[snapshot_id].state;
+            snapshots[snapshot_id][0].channel = snapshot[snapshot_id].channel;
+            snapshots[snapshot_id][0].timestamp = snapshot[snapshot_id].timestamp;
+            number_received[snapshot_id]++;
+        }
 
-            if (node_id == 0) {
-                snapshots[snapshot_id][0].state = snapshot[snapshot_id].state;
-                snapshots[snapshot_id][0].channel = snapshot[snapshot_id].channel;
-                snapshots[snapshot_id][0].timestamp = snapshot[snapshot_id].timestamp;
+        else {
+            int length = nb_nodes * 3 +  12;
+            int timestamp_length = nb_nodes * 3;
+            char* converge_msg = (char*)malloc(length * sizeof(char) + 3);
 
-                number_received[snapshot_id]++;
-
-                if (number_received[snapshot_id] == node_id) {
-                    int i, k, max;
-                    
-                    int termination_detected = 1;
-                    for (i = 0; i < nb_nodes; i++) {
-                        if (snapshots[snapshot_id][i].state == Active)
-                            termination_detected = 0;
-                        if (snapshots[snapshot_id][i].channel == NotEmpty) 
-                            termination_detected = 0;
-                    }
-
-                    int consistent = 1;
-                    for (i = 0; (i < nb_nodes) && consistent; i++) {
-                        max = snapshots[snapshot_id][i].timestamp[i]; 
-                        for (k = 0; (k < nb_nodes) && consistent; k++) {
-                            if (snapshots[snapshot_id][k].timestamp[i] >= max) {
-                                printf("INCONSISTENT SNAPSHOT\n");
-                                consistent = 0;
-                            } 
-                        }
-                    } 
-                        
-                    if (termination_detected) 
-                    {
-                        char msg[10];
-                        for (i = 0; i < nb_neighbors; i++)
-                        {
-                            snprintf(msg, 6, "%02d%02dH", node_id, neighbors[i].id);
-                            send_msg(neighbors[i].send_socket, msg, 5);
-                        }
-                        output();
-                    }
-                }
-            }
-
-            else {
-                int length = nb_nodes * 3 +  12;
-                int timestamp_length = nb_nodes * 3;
-                char* converge_msg = (char*)malloc(length * sizeof(char) + 3);
-
-                snprintf(converge_msg, length + 1, "%02d%02dC%02d%03d%c%c%s", node_id, parent[node_id]
-                       , node_id, snapshot_id, snapshot[snapshot_id].state, snapshot[snapshot_id].channel, create_vector_msg(timestamp));
-                int i = 0;
-                for (i = 0; i < nb_neighbors; i++) {
-                    if (neighbors[i].id == parent[node_id]) {
-                        send_msg(neighbors[i].send_socket, converge_msg, length);
-                        break;
-                    }
+            snprintf(converge_msg, length + 1, "%02d%02dC%02d%03d%d%d%s", node_id, parent[node_id]
+                   , node_id, snapshot_id, snapshot[snapshot_id].state, snapshot[snapshot_id].channel, create_vector_msg(timestamp));
+            int i = 0;
+            for (i = 0; i < nb_neighbors; i++) {
+                if (neighbors[i].id == parent[node_id]) {
+                    send_msg(neighbors[i].send_socket, converge_msg, length);
+                    break;
                 }
             }
         }
@@ -596,6 +607,7 @@ void* snapshot_handler()
  
             memcpy(snapshot[snapshot_id].timestamp, timestamp, sizeof(timestamp));
             snapshot[snapshot_id].color = Red;
+            last_snapshot_id = snapshot_id;
             send_marker_messages(snapshot_id);
             snapshot_id++;
         }
@@ -639,7 +651,6 @@ char * create_vector_msg(int * vector_clk)
         node_counter++;
     }
     vector_msg[i] = '\0';
-    //printf("%s\n", vector_msg);
     return vector_msg;
 }
 
@@ -695,6 +706,7 @@ char * message_payload(char * msg)
 
 void output()
 {
+    printf("OUTPUT\n");
     int txtlength = strlen(system_config.config_name);
     int outlength = strlen(system_config.config_name) + 5;
     char * partial = malloc(txtlength-4);
@@ -705,14 +717,36 @@ void output()
     FILE * fp = fopen(file, "w");
     int snapshot_counter;
     int vector_counter;
-    for (snapshot_counter = 0; snapshot_counter < last_snapshot_id; snapshot_counter++)
+    for (snapshot_counter = 0; snapshot_counter < last_snapshot_id + 1; snapshot_counter++)
     {
         for (vector_counter = 0; vector_counter < nb_nodes; vector_counter++)
         {
             fprintf(fp, "%d ", snapshot[snapshot_counter].timestamp[vector_counter]);
         }
+
+        fprintf(fp, "\n");
     }
     fclose(fp);
     free (partial);
     free (file); 
+    free(neighbors);
+    int i, j;
+    for (i = 0; i < dimension; i++)
+    {
+        free(snapshot[i].timestamp);
+        free(snapshot[i].neighbors);
+
+        for (j = 0; j < nb_nodes; j++)
+        {
+            if (i < last_cast_id)
+            {
+                free(snapshots[i][j].timestamp);
+                free(snapshots[i][j].neighbors);
+            }
+        }
+        free(snapshots[i]);
+    }
+    free(snapshot);
+    free(snapshots);
+    free(timestamp);
 }
