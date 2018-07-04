@@ -780,7 +780,7 @@ void output()
         free(snapshot[i].timestamp);
         free(snapshot[i].neighbors);
 
-        for (j = 0; j < nb_nodes; j++)
+        for (j = 1; j < nb_nodes; j++)
         {
             if (i < last_cast_id)
             {
