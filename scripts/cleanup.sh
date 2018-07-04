@@ -1,16 +1,13 @@
 #!/bin/bash
 
-
 # Change this to your netid
 netid=mxb173430
 
-#
 # Root directory of your project
 PROJDIR=$HOME/snapshot
 
-#
 # Directory where the config file is located on your local system
-CONFIGLOCAL=$HOME/launch/conf2.txt
+CONFIGLOCAL=$HOME/snapshot/config_files/conf2.txt
 
 n=0
 
@@ -31,8 +28,6 @@ cat $CONFIGLOCAL | sed -e "s/#.*//" | sed -e "/^\s*$/d" |
 
         n=$(( n + 1 ))
     done
-   
 )
-
 
 echo "Cleanup complete"

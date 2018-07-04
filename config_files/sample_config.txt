@@ -1,0 +1,13 @@
+# Number of nodes | Min messages | Max Messages | Send Delay | Snapshot Delay | Total messages
+
+2 6 10 1000 2000 15
+
+# Node ID | Host | Port
+
+0 dc02 1234
+1 dc03 1233
+
+# List of neighbors for each node
+
+1
+0

@@ -8,7 +8,7 @@ PROG=/home/013/m/mx/mxb173430/snapshot/node
 CONFIG=/home/013/m/mx/mxb173430/snapshot/conf3.txt
 
 # Directory where the config file is located on your local system
-CONFIGLOCAL=$HOME/launch/conf3.txt
+CONFIGLOCAL=$HOME/snapshot/config_files/conf3.txt
 
 n=0
 
