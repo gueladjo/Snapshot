@@ -23,7 +23,6 @@ void free_config(config);
 int ** create_spanning_tree(int ** out_tree_neighbors, int **,  int* nodeIDs, int** nodeNeighbors, int * nodeNeighborCount, int numNodes);
 int **  DFS(int atNodeIndex, int ** neighborIndices, int * nodeNeighborCount, int numNodes, int ** tree, int * tree_neighbor_count, int * visited, int *);
 int ** convertToIndex(int * nodeIDs, int ** nodeNeighbors, int * nodeNeighborCount, int numNodes);
-int find(int value, int * array, int length);
 void printArray(int * array, int length);
 
 #endif

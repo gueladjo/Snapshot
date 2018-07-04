@@ -87,7 +87,6 @@ config system_config;
 
 // Node Paramters
 int node_id;
-int this_index; // Index of node information in system_config. This would be unneeded if node_id = index, but i dont think we can assume that.
 int port;
 enum State node_state;
 int* timestamp;
@@ -117,8 +116,7 @@ int main(int argc, char* argv[])
 
     sscanf(argv[1], "%d", &node_id);
 
-    this_index= find(node_id, system_config.nodeIDs, system_config.nodes_in_system);
-    nb_neighbors = system_config.neighborCount[this_index];
+    nb_neighbors = system_config.neighborCount[node_id];
     port = system_config.portNumbers[node_id];
 
     // Set up neighbors information and initialize vector timestamp
@@ -156,9 +154,9 @@ int main(int argc, char* argv[])
     int ** tree = create_spanning_tree(&tree_count, &parent, system_config.nodeIDs, system_config.neighbors, system_config.neighborCount, system_config.nodes_in_system);
 
     // allocate neighbors array
-    for (i = 0; i < system_config.neighborCount[this_index]; i++)
+    for (i = 0; i < system_config.neighborCount[node_id]; i++)
     {
-        neighbors[i].id = system_config.neighbors[this_index][i];
+        neighbors[i].id = system_config.neighbors[node_id][i];
         neighbors[i].port = system_config.portNumbers[neighbors[i].id];
         memmove(neighbors[i].hostname, system_config.hostNames[neighbors[i].id], 18);
     }
@@ -425,7 +423,7 @@ int handle_message(char* message, size_t length)
 
     else if (message_type(message) == CONVERGE_CAST) {
         if (node_id != 0) {
-            int parent_id = system_config.nodeIDs[parent[this_index]];
+            int parent_id = system_config.nodeIDs[parent[node_id]];
             int i;
             for (i = 0; i < nb_neighbors; i++) {
                 if (neighbors[i].id == parent_id) {
