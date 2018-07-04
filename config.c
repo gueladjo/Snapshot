@@ -141,11 +141,6 @@ int* read_config_file(config * system, char* fileName)
             int matched;
             int neighborIndex;     
 
-            if (linesRead == 19)
-            {
-                printf("test\n");
-            }
-
             charInput = fgetc(fp);
             
             if (charInput != ' ' && charInput != '#' && charInput != '\n')
