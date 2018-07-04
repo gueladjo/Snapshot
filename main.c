@@ -461,7 +461,6 @@ int handle_message(char* message, size_t length)
 
                 int consistent = 1;
 
-
                 for (i = 0; (i < nb_nodes) && consistent; i++) {
                     printf("Node %d:", i);
                     for (k = 0; (k < nb_nodes) && consistent; k++) {
@@ -474,7 +473,6 @@ int handle_message(char* message, size_t length)
                     max = snapshots[snapshot_id][i].timestamp[i]; 
                     for (k = 0; (k < nb_nodes) && consistent; k++) {
                         if (snapshots[snapshot_id][k].timestamp[i] > max) {
-                            printf("INCONSISTENT SNAPSHOT\n");
                             consistent = 0;
                         } 
                     }
