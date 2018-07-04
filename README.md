@@ -19,7 +19,7 @@ and application parameters.
 
 make
 
-# Run the program:
+## Run the program:
 
 ./node nodeID config_file
 
