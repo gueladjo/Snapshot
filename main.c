@@ -17,7 +17,6 @@
 #define MARKER_MSG 'M'
 #define CONVERGE_CAST 'C'
 #define HALT 'H'
-#define MSG_BUFFER_SIZE 100
 
 // Mutex
 sem_t send_marker;
@@ -780,12 +779,13 @@ void output()
         free(snapshot[i].timestamp);
         free(snapshot[i].neighbors);
 
-        for (j = 1; j < nb_nodes; j++)
-        {
-            if (i < last_cast_id)
+        if (node_id == 0) {
+            for (j = 1; j < nb_nodes; j++)
             {
-                free(snapshots[i][j].timestamp);
-                free(snapshots[i][j].neighbors);
+                if (i < last_cast_id)
+                {
+                    free(snapshots[i][j].timestamp);
+                }
             }
         }
         free(snapshots[i]);
