@@ -82,8 +82,7 @@ int min_send_delay;
 int snapshot_delay;
 int max_number;
 
-    int dimension = 200;
-
+int dimension = 300;
 
 config system_config; 
 
