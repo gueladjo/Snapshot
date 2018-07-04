@@ -141,6 +141,10 @@ int* read_config_file(config * system, char* fileName)
             int matched;
             int neighborIndex;     
 
+            if (linesRead == 19)
+            {
+                printf("test\n");
+            }
 
             charInput = fgetc(fp);
             
@@ -154,34 +158,34 @@ int* read_config_file(config * system, char* fileName)
                     if (charInput <= 57 && charInput >= 48)
                     {
                         onesPlace = charInput;
-                        input = atoi(&tensPlace)*10 + atoi(&onesPlace);
-                        
+                        input = (tensPlace - '0')*10 + (onesPlace - '0');
+                        charInput = fgetc(fp);
                     }
                     else 
                     {
                         input = atoi(&tensPlace);
-                        tempArray[tempIndex] = input;
-                        tempIndex++;
-                        if (charInput == '\n' ||charInput == '#' || feof(fp))
+                    }
+                    tempArray[tempIndex] = input;
+                    tempIndex++;
+                    if (charInput == '\n' ||charInput == '#' || feof(fp))
+                    {
+                        if (tempIndex >0)
                         {
-                            if (tempIndex >0)
+                        system->neighbors[linesRead] = (int*)malloc((tempIndex+1) * sizeof(int));
+                            
+                            for (neighborIndex = 0; neighborIndex < tempIndex; neighborIndex++) // tempIndex = neighborCount for node at lineRead (first line = fisrt node)
                             {
-                            system->neighbors[linesRead] = (int*)malloc((tempIndex+1) * sizeof(int));
-                                
-                                for (neighborIndex = 0; neighborIndex < tempIndex; neighborIndex++) // tempIndex = neighborCount for node at lineRead (first line = fisrt node)
-                                {
-                                    system->neighbors[linesRead][neighborIndex] = tempArray[neighborIndex];
-                                }
-                                system->neighborCount[linesRead] = tempIndex;
-                                tempIndex = 0;
-                                linesRead++;
+                                system->neighbors[linesRead][neighborIndex] = tempArray[neighborIndex];
                             }
-                            if (charInput == '#')
+                            system->neighborCount[linesRead] = tempIndex;
+                            tempIndex = 0;
+                            linesRead++;
+                        }
+                        if (charInput == '#')
+                        {
+                            while (charInput != '\n' )
                             {
-                                while (charInput != '\n' )
-                                {
-                                    charInput = fgetc(fp);
-                                }
+                                charInput = fgetc(fp);
                             }
                         }
                     }

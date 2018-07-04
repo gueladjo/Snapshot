@@ -104,6 +104,7 @@ int nb_neighbors;
 
 int main(int argc, char* argv[])
 {
+    printf("START");
     // Config struct filled when config file parsed
     srand(time(NULL));
 
@@ -309,10 +310,12 @@ int main(int argc, char* argv[])
                         exit(1);
                     }
 
-                    timestamp[node_id]++;                    
+                    timestamp[node_id]++;           
+                    char * vector_msg = create_vector_msg(timestamp);         
                     snprintf(msg, total_length, "%02d%02dA%s", node_id,
-                            neighborToSend.id, create_vector_msg(timestamp));
+                            neighborToSend.id, vector_msg);
                     send_msg(neighborToSend.send_socket, msg, total_length - 1);
+                    free(vector_msg);
 
                     if (sem_post(&send_marker) == -1) {
                         printf("Error during signal on mutex.\n");
@@ -491,7 +494,6 @@ int handle_message(char* message, size_t length)
                         snprintf(msg, 9, "%02d%02dH%03d", node_id, neighbors[i].id, last_cast_id);
                         send_msg(neighbors[i].send_socket, msg, 8);
                     }
-                    free(timestamp_vec);
                     output();
                     exit(0);
                 }
@@ -552,7 +554,7 @@ void activate_node()
 void record_snapshot(char* message)
 {
     int sent_by = message_source(message);
-    int snapshot_id;
+    int snapshot_id = 0;
     sscanf(message_payload(message), "%3d", &snapshot_id);
 
     // Marker message by neighbor received: stop recording channel for this neighbor
@@ -593,9 +595,9 @@ void record_snapshot(char* message)
             int length = nb_nodes * 3 +  12;
             int timestamp_length = nb_nodes * 3;
             char* converge_msg = (char*)malloc(length * sizeof(char) + 3);
-
+            char * vector_msg = create_vector_msg(timestamp);
             snprintf(converge_msg, length + 1, "%02d%02dC%02d%03d%d%d%s", node_id, parent[node_id]
-                   , node_id, snapshot_id, snapshot[snapshot_id].state, snapshot[snapshot_id].channel, create_vector_msg(timestamp));
+                   , node_id, snapshot_id, snapshot[snapshot_id].state, snapshot[snapshot_id].channel, vector_msg);
             int i = 0;
             for (i = 0; i < nb_neighbors; i++) {
                 if (neighbors[i].id == parent[node_id]) {
@@ -603,6 +605,8 @@ void record_snapshot(char* message)
                     break;
                 }
             }
+            free(vector_msg);
+            free(converge_msg);
         }
     }
 }
@@ -751,10 +755,11 @@ void output()
 {
     printf("OUTPUT\n");
     int txtlength = strlen(system_config.config_name);
-    int outlength = strlen(system_config.config_name) + 5;
-    char * partial = malloc(txtlength-4);
+    int outlength = strlen(system_config.config_name) + 10;
+    char * partial = malloc(txtlength-3);
     char * file = malloc(outlength);
     memmove(partial, system_config.config_name, txtlength-4);
+    partial[txtlength-4] = '\0';
 
     snprintf(file, outlength, "%s-%d.out", partial, node_id);
     FILE * fp = fopen(file, "w");
@@ -791,5 +796,6 @@ void output()
     }
     free(snapshot);
     free(snapshots);
+    free(number_received);    
     free(timestamp);
 }
